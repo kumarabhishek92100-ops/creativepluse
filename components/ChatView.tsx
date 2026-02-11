@@ -47,7 +47,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentUser }) => {
       setChats(localChats);
     }
 
-    setAllArtists(storage.getAllArtists().filter(a => a.id !== currentUser.id));
+    // Fix: storage.getAllArtists is reactive and expects a callback.
+    storage.getAllArtists((users) => {
+      setAllArtists(users.filter(a => a.id !== currentUser.id));
+    });
 
     const unsubscribe = realtime.subscribe((msg) => {
       if (msg.type === 'HEARTBEAT') {
@@ -166,7 +169,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentUser }) => {
         <div className="px-6 mb-4">
            <h4 className="text-[9px] font-bold uppercase tracking-widest opacity-40 mb-3">Pulse Status</h4>
            <div className="flex -space-x-3 overflow-hidden h-10 items-center">
-              {/* Fix type errors for 'data' which was inferred as unknown by casting to any */}
               {Object.entries(activeUsers).map(([id, data]) => (
                 <div key={id} className="relative group" title={(data as any).name}>
                    <img src={(data as any).avatar} className="w-8 h-8 rounded-full border-2 border-[var(--border)] bg-white" alt={(data as any).name} />

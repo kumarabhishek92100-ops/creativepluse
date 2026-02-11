@@ -28,16 +28,20 @@ const ProfileView: React.FC<ProfileViewProps> = ({ userId, isOwn, onClose }) => 
         // Pass userId to getPosts
         setPosts(storage.getPosts(u.id));
       }
+      setLoading(false);
     } else {
       // In local mode, we only see local users
-      const allPosts = storage.getGlobalFeed();
-      setPosts(allPosts.filter(p => p.author.id === userId));
-      if (allPosts.length > 0) {
-        const found = allPosts.find(p => p.author.id === userId);
-        if (found) setProfile(found.author);
-      }
+      // Fix: storage.getGlobalFeed is reactive and expects a callback.
+      storage.getGlobalFeed((allPosts) => {
+        const filteredPosts = allPosts.filter(p => p.author.id === userId);
+        setPosts(filteredPosts);
+        if (allPosts.length > 0) {
+          const found = allPosts.find(p => p.author.id === userId);
+          if (found) setProfile(found.author);
+        }
+        setLoading(false);
+      });
     }
-    setLoading(false);
   }, [userId, isOwn]);
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -46,7 +50,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ userId, isOwn, onClose }) => 
     const reader = new FileReader();
     reader.onload = (event) => {
       const content = event.target?.result as string;
-      // importWorkspace now properly implemented
+      // importWorkspace now properly implemented in storageService
       if (storage.importWorkspace(content)) {
         window.location.reload(); // Hard reset to load new state safely
       } else {

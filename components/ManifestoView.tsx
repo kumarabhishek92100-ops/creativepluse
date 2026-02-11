@@ -11,9 +11,11 @@ const ManifestoView: React.FC<ManifestoViewProps> = ({ currentUser }) => {
   const [manifestations, setManifestations] = useState<Post[]>([]);
 
   useEffect(() => {
-    const all = storage.getGlobalFeed();
-    const goals = all.filter(p => p.type === 'target' && p.author.id === currentUser.id);
-    setManifestations(goals.sort((a, b) => new Date(a.deadline || '').getTime() - new Date(b.deadline || '').getTime()));
+    // Fix: storage.getGlobalFeed is reactive and expects a callback.
+    storage.getGlobalFeed((all) => {
+      const goals = all.filter(p => p.type === 'target' && p.author.id === currentUser.id);
+      setManifestations(goals.sort((a, b) => new Date(a.deadline || '').getTime() - new Date(b.deadline || '').getTime()));
+    });
   }, [currentUser.id]);
 
   const calculateProgress = (post: Post) => {

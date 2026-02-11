@@ -12,7 +12,6 @@ import ManifestoView from './components/ManifestoView';
 import NotificationToast from './components/NotificationToast';
 import { Post, AppView, User, PulseNotification } from './types';
 import { storage } from './services/storageService';
-import { realtime } from './services/realtimeService';
 
 const App: React.FC = () => {
   const [view, setView] = useState<AppView>('feed');
@@ -27,7 +26,8 @@ const App: React.FC = () => {
     const session = storage.getSession();
     setCurrentUser(session);
     
-    // Subscribe to Global Real-time Feed
+    // Subscribe to Global REAL-TIME GunDB Feed
+    // This listens for any post created by any client on the internet
     storage.getGlobalFeed((posts) => {
       setGlobalPosts(posts);
       setNetworkStatus('online');
@@ -36,8 +36,6 @@ const App: React.FC = () => {
     const theme = storage.getTheme();
     document.documentElement.setAttribute('data-theme', theme);
     setIsReady(true);
-
-    return () => {};
   }, []);
 
   const handleLogout = () => {
@@ -65,11 +63,12 @@ const App: React.FC = () => {
 
   return (
     <Layout activeView={view} setActiveView={setView} onLogout={handleLogout}>
+      {/* Network Status Indicator */}
       <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[300] pointer-events-none">
-        <div className={`px-4 py-1.5 rounded-full border-2 border-[var(--border)] bg-[var(--card-bg)] shadow-xl flex items-center gap-3 transition-all duration-500 ${networkStatus === 'syncing' ? 'scale-110' : 'scale-100 opacity-60 hover:opacity-100'}`}>
-          <div className={`w-2 h-2 rounded-full ${networkStatus === 'online' ? 'bg-green-500' : 'bg-amber-500 animate-ping'}`}></div>
+        <div className={`px-4 py-1.5 rounded-full border-2 border-[var(--border)] bg-[var(--card-bg)] shadow-xl flex items-center gap-3 transition-all duration-500`}>
+          <div className={`w-2 h-2 rounded-full bg-green-500 animate-pulse`}></div>
           <span className="text-[8px] font-bold uppercase tracking-widest">
-            {networkStatus === 'online' ? 'Global Mesh Connected' : 'Syncing...'}
+            Mesh Online
           </span>
         </div>
       </div>
@@ -85,9 +84,10 @@ const App: React.FC = () => {
           <header className="mb-12">
             <div className="flex items-center justify-between">
               <div className="bg-[var(--primary)] text-white p-4 chunky-card !shadow-none !border-0 rotate-[-1deg] inline-block mb-3">
-                 <h2 className="text-3xl md:text-5xl font-display leading-none uppercase tracking-tight">Global.</h2>
+                 <h2 className="text-3xl md:text-5xl font-display leading-none uppercase tracking-tight">Gallery.</h2>
               </div>
             </div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-30">Global Collective Sync</p>
           </header>
           
           <div className="space-y-16 pb-32">
@@ -103,7 +103,7 @@ const App: React.FC = () => {
             ))}
             {globalPosts.length === 0 && (
               <div className="py-32 text-center opacity-20 italic">
-                 Searching the global pulse...
+                 Tuning into the global resonance...
               </div>
             )}
           </div>
@@ -115,9 +115,9 @@ const App: React.FC = () => {
       )}
 
       {view === 'calendar' && <ManifestoView currentUser={currentUser} />}
-
       {view === 'chat' && <ChatView currentUser={currentUser} />}
       {view === 'room' && <Room onExit={() => setView('feed')} />}
+      
       {view === 'create' && <CreatePost onPublish={(data) => {
         const newPost: Post = {
           ...data,

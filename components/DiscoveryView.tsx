@@ -22,10 +22,8 @@ const DiscoveryView: React.FC<{ currentUser: User, onArtistClick: (id: string) =
   const [globalGroundingLinks, setGlobalGroundingLinks] = useState<{title: string, uri: string}[]>([]);
 
   useEffect(() => {
-    // Live update artist mesh from GunDB
-    const initialArtists = storage.getAllArtists();
-    setLocalArtists(initialArtists.filter(a => a.id !== currentUser.id));
-
+    // Live update artist mesh from GunDB subscription.
+    // Fix: storage.getAllArtists is reactive and expects a callback.
     storage.getAllArtists((users) => {
       setLocalArtists(users.filter(a => a.id !== currentUser.id));
     });
