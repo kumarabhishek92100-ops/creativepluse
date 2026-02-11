@@ -37,12 +37,9 @@ const Room: React.FC<RoomProps> = ({ onExit }) => {
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [aiActive, setAiActive] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const lobbyVideoRef = useRef<HTMLVideoElement>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
 
   const inputAudioContext = useRef<AudioContext | null>(null);
@@ -101,7 +98,10 @@ const Room: React.FC<RoomProps> = ({ onExit }) => {
           scriptProcessor.connect(inputAudioContext.current!.destination);
         },
         onmessage: async (msg) => {
-          const audio = msg.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
+          // Fixed possibly undefined error with optional chaining
+          const parts = msg.serverContent?.modelTurn?.parts;
+          const audio = parts && parts.length > 0 ? parts[0]?.inlineData?.data : null;
+          
           if (audio && outputAudioContext.current) {
             const buffer = await decodeAudioData(decode(audio), outputAudioContext.current, 24000, 1);
             const source = outputAudioContext.current.createBufferSource();

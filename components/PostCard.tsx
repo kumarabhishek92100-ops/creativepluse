@@ -1,7 +1,6 @@
 
 import React, { useState } from 'react';
-import { Post } from '../types';
-import { getCreativeFeedback } from '../services/geminiService';
+import { Post, Comment } from '../types';
 
 interface PostCardProps {
   post: Post;
@@ -23,12 +22,20 @@ const PostCard: React.FC<PostCardProps> = ({ post, onUpdate, onUserClick }) => {
   const handleAddComment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim()) return;
-    const comment = { 
+    
+    const comment: Comment = { 
       id: `c-${Date.now()}`, 
-      author: { id: 'me', name: 'PEER', avatar: 'https://api.dicebear.com/7.x/big-smile/svg?seed=Peer', role: 'Reviewer' }, 
+      author: { 
+        id: 'me', 
+        name: 'PEER', 
+        avatar: 'https://api.dicebear.com/7.x/big-smile/svg?seed=Peer', 
+        role: 'Reviewer',
+        joinedAt: new Date().toISOString()
+      }, 
       text: newComment, 
-      createdAt: 'NOW' 
+      createdAt: new Date().toLocaleDateString()
     };
+    
     onUpdate({ ...post, comments: [...(post.comments || []), comment] });
     setNewComment('');
   };
@@ -47,7 +54,6 @@ const PostCard: React.FC<PostCardProps> = ({ post, onUpdate, onUserClick }) => {
               <span className="text-[9px] font-bold opacity-40 uppercase tracking-widest">{post.author.role}</span>
             </div>
           </button>
-          {/* Visibility Badge */}
           <div className={`px-2 py-0.5 rounded-lg border border-[var(--border)] text-[7px] font-bold uppercase tracking-widest ${post.visibility === 'public' ? 'bg-green-100' : 'bg-amber-100'}`}>
              {post.visibility === 'public' ? '🌍 Public' : '🔒 Circle'}
           </div>
@@ -103,7 +109,6 @@ const PostCard: React.FC<PostCardProps> = ({ post, onUpdate, onUserClick }) => {
           {post.caption}
         </p>
 
-        {/* Community Review Section */}
         {showReviews && (
           <div className="border-t-2 border-dashed border-[var(--border)] pt-8 space-y-6 animate-fade-in">
              <div className="flex items-center justify-between mb-4">
