@@ -53,16 +53,16 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setActiveView, on
             className="w-full flex items-center space-x-3 p-3 rounded-2xl hover:bg-black/5 transition-all text-[var(--text-main)] font-heading text-xs uppercase"
           >
             <span className="text-lg">🎨</span>
-            <span className="hidden lg:block">Realm Shift</span>
+            <span className="hidden lg:block">Universal Shift</span>
           </button>
         </div>
         
         <div className="space-y-4 flex-1">
-          <NavItem isActive={activeView === 'feed'} onClick={() => setActiveView('feed')} label="Global Feed" icon={<svg className="w-6 h-6 nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path></svg>} />
-          <NavItem isActive={activeView === 'chat'} onClick={() => setActiveView('chat')} label="Mesh Chat" icon={<svg className="w-6 h-6 nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>} />
-          <NavItem isActive={activeView === 'discovery'} onClick={() => setActiveView('discovery')} label="Artist Mesh" icon={<svg className="w-6 h-6 nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>} />
+          <NavItem isActive={activeView === 'feed'} onClick={() => setActiveView('feed')} label="Global Stream" icon={<svg className="w-6 h-6 nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path></svg>} />
+          <NavItem isActive={activeView === 'chat'} onClick={() => setActiveView('chat')} label="Mesh Frequency" icon={<svg className="w-6 h-6 nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>} />
+          <NavItem isActive={activeView === 'discovery'} onClick={() => setActiveView('discovery')} label="Global Mesh" icon={<svg className="w-6 h-6 nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>} />
           <NavItem isActive={activeView === 'calendar'} onClick={() => setActiveView('calendar')} label="Manifesto" icon={<svg className="w-6 h-6 nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 00-2 2z"></path></svg>} />
-          <NavItem isActive={activeView === 'room'} onClick={() => setActiveView('room')} label="Workshop" icon={<svg className="w-6 h-6 nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>} />
+          <NavItem isActive={activeView === 'room'} onClick={() => setActiveView('room')} label="Portal" icon={<svg className="w-6 h-6 nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>} />
         </div>
 
         <div className="mt-auto space-y-4">
@@ -73,7 +73,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setActiveView, on
             <img src={currentUser?.avatar} className="w-10 h-10 rounded-full border border-[var(--border)] bg-white" alt="" />
             <div className="hidden lg:block text-left">
               <p className="font-heading text-xs uppercase truncate max-w-[120px]">{currentUser?.name}</p>
-              <p className="text-[9px] font-bold opacity-40 uppercase">@{currentUser?.name}</p>
+              <p className="text-[9px] font-bold opacity-40 uppercase">Universal Link</p>
             </div>
           </button>
         </div>

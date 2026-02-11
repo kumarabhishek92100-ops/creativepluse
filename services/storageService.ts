@@ -5,8 +5,9 @@ import { gun, user, mesh } from './gunService';
 const THEME_KEY = 'cp_universal_v1_theme';
 const SESSION_KEY = 'cp_universal_v1_session';
 
-// Added local cache for posts to support synchronous getPosts calls in ProfileView
-let _cachedPosts: Post[] = [];
+// Global cache for mesh synchronization
+let _cachedGlobalPosts: Post[] = [];
+let _cachedGlobalArtists: User[] = [];
 
 const safeParse = (data: any, fallback: any) => {
   if (typeof data !== 'string') return data || fallback;
@@ -17,7 +18,6 @@ const safeParse = (data: any, fallback: any) => {
   }
 };
 
-// Added missing getAvatarUrl export used by AvatarEditor and ProfileView
 export function getAvatarUrl(config: AvatarConfig | undefined, userId: string): string {
   if (!config || Object.keys(config).length === 0) return `https://api.dicebear.com/7.x/big-smile/svg?seed=${userId}`;
   
@@ -43,14 +43,14 @@ export const storage = {
             id,
             name: alias,
             avatar: `https://api.dicebear.com/7.x/big-smile/svg?seed=${id}`,
-            role: 'Global Creator',
+            role: 'Mesh Artist',
             joinedAt: new Date().toISOString(),
-            bio: 'Establishing my presence in the mesh.',
+            bio: 'Universal creator in the mesh.',
             followers: [],
             following: []
           };
           
-          // Store public profile in the global registry
+          // Register public identity in the Universal Mesh Registry
           mesh.users.get(alias).put({
             ...newUser,
             following: JSON.stringify([]),
@@ -78,7 +78,7 @@ export const storage = {
               id: `u-${alias}`,
               name: alias,
               avatar: `https://api.dicebear.com/7.x/big-smile/svg?seed=${alias}`,
-              role: 'Global Creator',
+              role: 'Mesh Artist',
               joinedAt: new Date().toISOString()
             };
             this.setSession(profile);
@@ -111,28 +111,27 @@ export const storage = {
 
   getGlobalFeed(callback: (posts: Post[]) => void) {
     const postsMap = new Map<string, Post>();
+    // Listen for any post on the universal mesh
     mesh.posts.map().on((data: any, id: string) => {
       if (!data) return;
       try {
         const post: Post = {
           ...data,
-          author: safeParse(data.author, { name: 'Unknown', avatar: '', role: 'Artist' }),
+          author: safeParse(data.author, { name: 'Anonymous', avatar: '', role: 'Mesh Entity' }),
           comments: safeParse(data.comments, []),
           likedBy: safeParse(data.likedBy, [])
         };
         postsMap.set(id, post);
         const sorted = Array.from(postsMap.values())
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        // SYNC CACHE: Update local cache whenever global feed updates
-        _cachedPosts = sorted;
+        _cachedGlobalPosts = sorted;
         callback(sorted);
       } catch (e) {}
     });
   },
 
-  // Added missing getPosts method to filter posts by user ID from cache
   getPosts(userId: string): Post[] {
-    return _cachedPosts.filter(p => p.author && p.author.id === userId);
+    return _cachedGlobalPosts.filter(p => p.author && p.author.id === userId);
   },
 
   savePost(post: Post) {
@@ -183,14 +182,18 @@ export const storage = {
 
   getAllArtists(callback: (users: User[]) => void) {
     const usersMap = new Map<string, User>();
+    // Scan the Universal User Registry
     mesh.users.map().on((data: any, name: string) => {
       if (data && data.name) {
-        usersMap.set(name, {
+        const u = {
           ...data,
           following: safeParse(data.following, []),
           followers: safeParse(data.followers, [])
-        });
-        callback(Array.from(usersMap.values()));
+        };
+        usersMap.set(name, u);
+        const artists = Array.from(usersMap.values());
+        _cachedGlobalArtists = artists;
+        callback(artists);
       }
     });
   },
@@ -204,7 +207,6 @@ export const storage = {
           return;
         }
 
-        // Update Following
         const following = safeParse(currentUser.following, []);
         if (!following.includes(alias)) {
           following.push(alias);
@@ -212,7 +214,6 @@ export const storage = {
           this.setSession({ ...currentUser, following });
         }
 
-        // Update Followers
         const followers = safeParse(target.followers, []);
         if (!followers.includes(currentUser.name)) {
           followers.push(currentUser.name);
@@ -247,7 +248,6 @@ export const storage = {
     document.documentElement.setAttribute('data-theme', theme);
   },
 
-  // Added missing exportWorkspace method
   exportWorkspace() {
     const session = this.getSession();
     const data = {
@@ -259,12 +259,11 @@ export const storage = {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `pulse-workspace-${Date.now()}.json`;
+    a.download = `pulse-universal-sync-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   },
 
-  // Added missing importWorkspace method
   importWorkspace(content: string): boolean {
     try {
       const data = JSON.parse(content);
@@ -275,28 +274,17 @@ export const storage = {
       if (data.theme) this.saveTheme(data.theme);
       return true;
     } catch (e) {
-      console.error("Import Workspace Error:", e);
       return false;
     }
   },
 
-  // Decentralized Chat Implementation
-  subscribeToChats(userId: string, callback: (chats: Chat[]) => void) {
-    mesh.chats.get(userId).map().on((chatData: any) => {
-      // This is a simplified P2P chat fetch
-      const chats = this.getChats(userId);
-      callback(chats);
-    });
-  },
-
   getChats(userId: string): Chat[] {
-    const data = localStorage.getItem(`chats_v2_${userId}`);
+    const data = localStorage.getItem(`chats_universal_${userId}`);
     return data ? JSON.parse(data) : [];
   },
 
   saveChats(userId: string, chats: Chat[]) {
-    localStorage.setItem(`chats_v2_${userId}`, JSON.stringify(chats));
-    // Mirror to GunDB for cloud persistence across devices
+    localStorage.setItem(`chats_universal_${userId}`, JSON.stringify(chats));
     mesh.chats.get(userId).put(JSON.stringify(chats));
   },
 

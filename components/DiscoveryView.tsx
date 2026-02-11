@@ -2,7 +2,6 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { storage } from '../services/storageService';
-import { GoogleGenAI } from "@google/genai";
 
 const DiscoveryView: React.FC<{ currentUser: User, onArtistClick: (id: string) => void }> = ({ currentUser, onArtistClick }) => {
   const [allUsers, setAllUsers] = useState<User[]>([]);
@@ -10,6 +9,7 @@ const DiscoveryView: React.FC<{ currentUser: User, onArtistClick: (id: string) =
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // This scans the Universal Mesh Registry for all artists on any network
     storage.getAllArtists((users) => {
       setAllUsers(users.filter(u => u.name !== currentUser.name));
       setLoading(false);
@@ -18,7 +18,7 @@ const DiscoveryView: React.FC<{ currentUser: User, onArtistClick: (id: string) =
 
   const handleFollow = async (handle: string) => {
     const friend = await storage.followUser(currentUser, handle);
-    if (friend) alert(`Frequency aligned with @${handle}`);
+    if (friend) alert(`Frequency aligned with @${handle} globally.`);
   };
 
   const filtered = allUsers.filter(u => u.name.toLowerCase().includes(search.toLowerCase()));
@@ -27,21 +27,24 @@ const DiscoveryView: React.FC<{ currentUser: User, onArtistClick: (id: string) =
     <div className="max-w-6xl mx-auto py-12 px-6 animate-fade-in pb-32">
       <header className="mb-12">
         <div className="bg-[var(--accent)] text-white p-4 chunky-card !shadow-none !border-0 rotate-[1deg] inline-block mb-3">
-           <h2 className="text-3xl md:text-5xl font-display uppercase tracking-tight">Mesh_Directory.</h2>
+           <h2 className="text-3xl md:text-5xl font-display uppercase tracking-tight">Mesh_Explorer.</h2>
         </div>
-        <p className="text-[10px] font-bold uppercase tracking-[0.4em] opacity-30 mb-8">Universal Identity Sync</p>
+        <p className="text-[10px] font-bold uppercase tracking-[0.4em] opacity-30 mb-8">Synchronizing with Global Peers</p>
         
         <input 
           type="text" 
-          placeholder="Search global handles..." 
-          className="w-full retro-input !py-5 text-lg font-heading uppercase"
+          placeholder="Enter global @handle or alias..." 
+          className="w-full retro-input !py-5 text-xl font-heading uppercase"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
       </header>
 
       {loading ? (
-        <div className="py-20 text-center animate-pulse text-2xl font-display uppercase opacity-20">Scanning frequencies...</div>
+        <div className="py-20 flex flex-col items-center justify-center">
+          <div className="w-16 h-16 border-4 border-[var(--primary)] border-t-transparent rounded-full animate-spin mb-6"></div>
+          <p className="font-display uppercase tracking-widest opacity-20 text-xl">Scanning Universal Satellites...</p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
           {filtered.map(artist => (
@@ -57,19 +60,22 @@ const DiscoveryView: React.FC<{ currentUser: User, onArtistClick: (id: string) =
                   onClick={() => onArtistClick(artist.id)}
                   className="text-[9px] font-bold uppercase underline tracking-widest hover:text-[var(--primary)]"
                 >
-                  View Studio
+                  View Global Studio
                 </button>
                 <button 
                   onClick={() => handleFollow(artist.name)}
                   className="chunky-button py-3 rounded-2xl text-[9px]"
                 >
-                  Align Pulse
+                  Align Frequency
                 </button>
               </div>
             </div>
           ))}
           {filtered.length === 0 && (
-            <p className="col-span-full py-20 text-center opacity-30 italic uppercase">No artists found in this sector.</p>
+            <div className="col-span-full py-32 text-center">
+               <div className="text-6xl mb-6 grayscale opacity-20">📡</div>
+               <p className="opacity-30 italic uppercase text-lg">No peers found in this quadrant. Try searching for a specific handle.</p>
+            </div>
           )}
         </div>
       )}
