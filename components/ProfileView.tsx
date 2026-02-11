@@ -21,7 +21,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ userId, isOwn, onClose }) => 
   useEffect(() => {
     setLoading(true);
     if (isOwn) {
-      const u = storage.getUser();
+      // Fix: storage.getUser replaced with storage.getSession
+      const u = storage.getSession();
       setProfile(u);
       if (u) {
         setPosts(storage.getPosts(u.id));
@@ -47,6 +48,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ userId, isOwn, onClose }) => 
     const reader = new FileReader();
     reader.onload = (event) => {
       const content = event.target?.result as string;
+      // Fix: storage.importWorkspace is now implemented in storageService
       if (storage.importWorkspace(content)) {
         window.location.reload();
       } else {
@@ -124,6 +126,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ userId, isOwn, onClose }) => 
 
           {isOwn && (
             <div className="mt-8 flex flex-wrap justify-center gap-4">
+               {/* Fix: storage.exportWorkspace is now implemented in storageService */}
                <button 
                 onClick={() => storage.exportWorkspace()}
                 className="px-6 py-3 rounded-2xl bg-[var(--accent)] text-white text-[9px] font-bold uppercase tracking-widest border-2 border-[var(--border)] shadow-md hover:-translate-y-1 transition-transform"

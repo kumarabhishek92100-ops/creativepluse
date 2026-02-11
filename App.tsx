@@ -12,6 +12,7 @@ import ManifestoView from './components/ManifestoView';
 import NotificationToast from './components/NotificationToast';
 import { Post, AppView, User, PulseNotification } from './types';
 import { storage } from './services/storageService';
+import { gun, getPeerCount } from './services/gunService';
 
 const App: React.FC = () => {
   const [view, setView] = useState<AppView>('feed');
@@ -20,22 +21,28 @@ const App: React.FC = () => {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [notifications, setNotifications] = useState<PulseNotification[]>([]);
-  const [networkStatus, setNetworkStatus] = useState<'online' | 'syncing' | 'offline'>('online');
+  const [peers, setPeers] = useState(0);
 
   useEffect(() => {
+    // 1. Restore local session immediately for UX
     const session = storage.getSession();
     setCurrentUser(session);
     
-    // Subscribe to Global REAL-TIME GunDB Feed
-    // This listens for any post created by any client on the internet
+    // 2. Start GunDB Global Sync
     storage.getGlobalFeed((posts) => {
       setGlobalPosts(posts);
-      setNetworkStatus('online');
     });
+    
+    // 3. Monitor Mesh Health
+    const meshTimer = setInterval(() => {
+      setPeers(getPeerCount());
+    }, 2000);
     
     const theme = storage.getTheme();
     document.documentElement.setAttribute('data-theme', theme);
     setIsReady(true);
+
+    return () => clearInterval(meshTimer);
   }, []);
 
   const handleLogout = () => {
@@ -63,12 +70,12 @@ const App: React.FC = () => {
 
   return (
     <Layout activeView={view} setActiveView={setView} onLogout={handleLogout}>
-      {/* Network Status Indicator */}
+      {/* Universal Mesh Health Indicator */}
       <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[300] pointer-events-none">
         <div className={`px-4 py-1.5 rounded-full border-2 border-[var(--border)] bg-[var(--card-bg)] shadow-xl flex items-center gap-3 transition-all duration-500`}>
-          <div className={`w-2 h-2 rounded-full bg-green-500 animate-pulse`}></div>
-          <span className="text-[8px] font-bold uppercase tracking-widest">
-            Mesh Online
+          <div className={`w-2.5 h-2.5 rounded-full ${peers > 0 ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+          <span className="text-[9px] font-bold uppercase tracking-widest whitespace-nowrap">
+            {peers > 0 ? `MESH CONNECTED :: ${peers} PEERS` : 'RECONNECTING TO MESH...'}
           </span>
         </div>
       </div>
@@ -82,12 +89,10 @@ const App: React.FC = () => {
       {view === 'feed' && (
         <div className="max-w-3xl mx-auto py-12 md:py-20 px-6 animate-fade-in">
           <header className="mb-12">
-            <div className="flex items-center justify-between">
-              <div className="bg-[var(--primary)] text-white p-4 chunky-card !shadow-none !border-0 rotate-[-1deg] inline-block mb-3">
-                 <h2 className="text-3xl md:text-5xl font-display leading-none uppercase tracking-tight">Gallery.</h2>
-              </div>
+            <div className="bg-[var(--primary)] text-white p-4 chunky-card !shadow-none !border-0 rotate-[-1deg] inline-block mb-3">
+               <h2 className="text-3xl md:text-5xl font-display leading-none uppercase tracking-tight">Gallery.</h2>
             </div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-30">Global Collective Sync</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-30">Global Peer-to-Peer Stream</p>
           </header>
           
           <div className="space-y-16 pb-32">
@@ -103,7 +108,7 @@ const App: React.FC = () => {
             ))}
             {globalPosts.length === 0 && (
               <div className="py-32 text-center opacity-20 italic">
-                 Tuning into the global resonance...
+                 {peers > 0 ? "Synchronizing universal resonance..." : "Searching for mesh peers..."}
               </div>
             )}
           </div>
@@ -118,7 +123,7 @@ const App: React.FC = () => {
       {view === 'chat' && <ChatView currentUser={currentUser} />}
       {view === 'room' && <Room onExit={() => setView('feed')} />}
       
-      {view === 'create' && <CreatePost onPublish={(data) => {
+      {view === 'create' && <CreatePost onPublish={async (data) => {
         const newPost: Post = {
           ...data,
           id: `p-${Date.now()}-${Math.random().toString(36).substr(2,5)}`,
@@ -129,7 +134,7 @@ const App: React.FC = () => {
           comments: [],
           createdAt: new Date().toISOString()
         };
-        storage.savePost(newPost);
+        await storage.savePost(newPost);
         setView('feed');
       }} />}
       

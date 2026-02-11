@@ -1,11 +1,11 @@
 
 import { Post, Chat, Message, AppTheme, User, AvatarConfig, Comment } from '../types';
-import { gun, user, mesh } from './gunService';
+import { gun, user, mesh, sea } from './gunService';
 
-const THEME_KEY = 'cp_universal_v1_theme';
-const SESSION_KEY = 'cp_universal_v1_session';
+const THEME_KEY = 'cp_universal_v5_theme';
+const SESSION_KEY = 'cp_universal_v5_session';
 
-// Global cache for mesh synchronization
+// In-memory cache to prevent UI flickering during P2P sync
 let _cachedGlobalPosts: Post[] = [];
 let _cachedGlobalArtists: User[] = [];
 
@@ -20,14 +20,12 @@ const safeParse = (data: any, fallback: any) => {
 
 export function getAvatarUrl(config: AvatarConfig | undefined, userId: string): string {
   if (!config || Object.keys(config).length === 0) return `https://api.dicebear.com/7.x/big-smile/svg?seed=${userId}`;
-  
   const params = new URLSearchParams();
   if (config.top) params.append('top', config.top);
   if (config.accessories) params.append('accessories', config.accessories);
   if (config.hairColor) params.append('hairColor', config.hairColor);
   if (config.clothing) params.append('clothing', config.clothing);
   if (config.eyes) params.append('eyes', config.eyes);
-  
   return `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}&${params.toString()}`;
 }
 
@@ -38,26 +36,34 @@ export const storage = {
         if (ack.err) {
           resolve({ user: null, error: ack.err });
         } else {
-          const id = `u-${Math.random().toString(36).substr(2, 9)}`;
-          const newUser: User = {
-            id,
-            name: alias,
-            avatar: `https://api.dicebear.com/7.x/big-smile/svg?seed=${id}`,
-            role: 'Mesh Artist',
-            joinedAt: new Date().toISOString(),
-            bio: 'Universal creator in the mesh.',
-            followers: [],
-            following: []
-          };
-          
-          // Register public identity in the Universal Mesh Registry
-          mesh.users.get(alias).put({
-            ...newUser,
-            following: JSON.stringify([]),
-            followers: JSON.stringify([])
+          // Immediately authenticate to set up the profile
+          this.login(alias, pass).then(res => {
+            if (res.user) {
+              const id = `u-${alias}`;
+              const newUser: User = {
+                id,
+                name: alias,
+                avatar: `https://api.dicebear.com/7.x/big-smile/svg?seed=${alias}`,
+                role: 'Mesh Artist',
+                joinedAt: new Date().toISOString(),
+                bio: 'Syncing globally via the mesh.',
+                followers: [],
+                following: []
+              };
+              
+              // 1. Store in the user's private, cryptographically signed node
+              user.get('profile').put(newUser);
+              
+              // 2. Register in the public Global Mesh Directory for discovery
+              mesh.users.get(alias).put({
+                ...newUser,
+                pub: user.is?.pub, // Link public key for verification
+                following: JSON.stringify([]),
+                followers: JSON.stringify([])
+              });
+            }
+            resolve(res);
           });
-          
-          this.login(alias, pass).then(res => resolve(res));
         }
       });
     });
@@ -69,7 +75,8 @@ export const storage = {
         if (ack.err) {
           resolve({ user: null, error: ack.err });
         } else {
-          mesh.users.get(alias).once((data: any) => {
+          // Fetch profile from the private signed node first
+          user.get('profile').once((data: any) => {
             const profile = data ? { 
               ...data,
               following: safeParse(data.following, []),
@@ -94,14 +101,16 @@ export const storage = {
   },
 
   getSession(): User | null {
+    // Priority 1: Check if Gun already recalled the session
+    if (user.is) {
+      const stored = localStorage.getItem(SESSION_KEY);
+      if (stored) return JSON.parse(stored);
+    }
+    // Priority 2: Try to restore from localStorage if Gun is still handshaking
     try {
       const data = localStorage.getItem(SESSION_KEY);
       return data ? JSON.parse(data) : null;
     } catch(e) { return null; }
-  },
-
-  getUser(): User | null {
-    return this.getSession();
   },
 
   logout() {
@@ -111,7 +120,7 @@ export const storage = {
 
   getGlobalFeed(callback: (posts: Post[]) => void) {
     const postsMap = new Map<string, Post>();
-    // Listen for any post on the universal mesh
+    // The .map().on() is reactive - it will update the UI as data streams in from the world
     mesh.posts.map().on((data: any, id: string) => {
       if (!data) return;
       try {
@@ -134,7 +143,7 @@ export const storage = {
     return _cachedGlobalPosts.filter(p => p.author && p.author.id === userId);
   },
 
-  savePost(post: Post) {
+  async savePost(post: Post) {
     const flatPost: any = {
       id: post.id,
       type: post.type,
@@ -152,7 +161,12 @@ export const storage = {
     if (post.audioUrl) flatPost.audioUrl = post.audioUrl;
     if (post.deadline) flatPost.deadline = post.deadline;
 
-    mesh.posts.get(post.id).put(flatPost);
+    // Use .put with an acknowledgment to ensure it reaches the mesh
+    return new Promise((resolve) => {
+      mesh.posts.get(post.id).put(flatPost, (ack: any) => {
+        resolve(ack);
+      });
+    });
   },
 
   saveComment(postId: string, comment: Comment) {
@@ -182,7 +196,6 @@ export const storage = {
 
   getAllArtists(callback: (users: User[]) => void) {
     const usersMap = new Map<string, User>();
-    // Scan the Universal User Registry
     mesh.users.map().on((data: any, name: string) => {
       if (data && data.name) {
         const u = {
@@ -210,6 +223,9 @@ export const storage = {
         const following = safeParse(currentUser.following, []);
         if (!following.includes(alias)) {
           following.push(alias);
+          // Update private user node
+          user.get('profile').get('following').put(JSON.stringify(following));
+          // Update public mesh node for discovery
           mesh.users.get(currentUser.name).get('following').put(JSON.stringify(following));
           this.setSession({ ...currentUser, following });
         }
@@ -236,6 +252,7 @@ export const storage = {
       followers: JSON.stringify(userData.followers || [])
     };
     this.setSession(userData);
+    user.get('profile').put(data);
     mesh.users.get(userData.name).put(data);
   },
 
@@ -248,44 +265,48 @@ export const storage = {
     document.documentElement.setAttribute('data-theme', theme);
   },
 
-  exportWorkspace() {
-    const session = this.getSession();
-    const data = {
-      session: session,
-      theme: this.getTheme(),
-      chats: session ? this.getChats(session.id) : []
-    };
-    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `pulse-universal-sync-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  },
-
-  importWorkspace(content: string): boolean {
-    try {
-      const data = JSON.parse(content);
-      if (data.session) {
-        this.setSession(data.session);
-        if (data.chats) this.saveChats(data.session.id, data.chats);
-      }
-      if (data.theme) this.saveTheme(data.theme);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  },
-
   getChats(userId: string): Chat[] {
-    const data = localStorage.getItem(`chats_universal_${userId}`);
+    const data = localStorage.getItem(`chats_universal_v5_${userId}`);
     return data ? JSON.parse(data) : [];
   },
 
   saveChats(userId: string, chats: Chat[]) {
-    localStorage.setItem(`chats_universal_${userId}`, JSON.stringify(chats));
+    localStorage.setItem(`chats_universal_v5_${userId}`, JSON.stringify(chats));
     mesh.chats.get(userId).put(JSON.stringify(chats));
+  },
+
+  // Fix: Added exportWorkspace to export current profile and workspace data
+  exportWorkspace() {
+    const me = this.getSession();
+    const data = {
+      profile: me,
+      theme: this.getTheme(),
+      chats: me ? this.getChats(me.id) : []
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pulse_workspace_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  // Fix: Added importWorkspace to restore profile and workspace from JSON data
+  importWorkspace(content: string): boolean {
+    try {
+      const data = JSON.parse(content);
+      if (data.profile) {
+        this.saveUser(data.profile);
+        if (data.theme) this.saveTheme(data.theme);
+        if (data.chats) this.saveChats(data.profile.id, data.chats);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.error("Import failed:", e);
+      return false;
+    }
   },
 
   sendMessage(chatId: string, message: Message): Chat[] {
@@ -300,21 +321,5 @@ export const storage = {
     });
     this.saveChats(me.id, updated);
     return updated;
-  },
-
-  createChat(me: User, peer: User): Chat {
-    const chats = this.getChats(me.id);
-    const existing = chats.find(c => !c.isGroup && c.participants.some(p => p.name === peer.name));
-    if (existing) return existing;
-
-    const newChat: Chat = {
-      id: `chat-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      participants: [peer],
-      messages: [],
-      isGroup: false,
-      lastMessage: 'Frequency aligned.'
-    };
-    this.saveChats(me.id, [newChat, ...chats]);
-    return newChat;
   }
 };
