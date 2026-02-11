@@ -2,9 +2,8 @@
 declare var Gun: any;
 
 /**
- * These are high-availability global GunDB relays.
- * Using multiple relays ensures that even if one network (like a specific ISP or region)
- * blocks one, the P2P mesh stays connected.
+ * Robust global relays. These act as the glue for P2P connections
+ * across different networks and Vercel deployments.
  */
 const relays = [
   'https://gun-manhattan.herokuapp.com/gun',
@@ -13,12 +12,14 @@ const relays = [
   'https://gun-us.herokuapp.com/gun',
   'https://gun-eu.herokuapp.com/gun',
   'https://dweb.link/gun',
-  'https://gunjs.herokuapp.com/gun'
+  'https://gunjs.herokuapp.com/gun',
+  'https://gun-sjc.herokuapp.com/gun'
 ];
 
+// Re-enable localStorage: It makes the app usable offline and much faster on startup
 export const gun = Gun({
   peers: relays,
-  localStorage: false, // Turn off Gun's internal localStorage to use IndexedDB/Radisk for better P2P stability
+  localStorage: true, 
   radisk: true,
   indexedDB: true
 });
@@ -27,20 +28,18 @@ export const gun = Gun({
 export const sea = Gun.SEA;
 
 /**
- * .recall({ sessionStorage: true }) is critical for Vercel/Web apps.
- * It allows the P2P session to persist across tab reloads without re-entering password.
+ * Recall the session to keep users logged in across refreshes.
  */
 export const user = gun.user().recall({ sessionStorage: true });
 
-// Global data namespaces - Version 5 Universal Mesh
+// Universal Mesh Namespace - V6
 export const mesh = {
-  posts: gun.get('cp_v5_global_posts_final'),
-  users: gun.get('cp_v5_global_users_final'),
-  presence: gun.get('cp_v5_global_presence_final'),
-  chats: gun.get('cp_v5_global_chats_final')
+  posts: gun.get('cp_v6_mesh_posts'),
+  users: gun.get('cp_v6_mesh_users'),
+  presence: gun.get('cp_v6_mesh_presence'),
+  chats: gun.get('cp_v6_mesh_chats')
 };
 
-// Helper to track peer count
 export const getPeerCount = () => {
   try {
     return Object.keys(gun._.opt.peers).length;
