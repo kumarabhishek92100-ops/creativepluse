@@ -1,26 +1,21 @@
 
-/**
- * GUN_SERVICE_DEPRECATED
- * To resolve the "HTTPS Server Not Found" error, we have removed all GunDB calls.
- * The application now relies on a robust local-first state with manual JSON backup.
- */
+declare var Gun: any;
 
-const mockNode = () => {
-  const node = {
-    put: () => node,
-    on: () => node,
-    map: () => node,
-    get: () => node,
-    once: (cb: any) => { if(cb) cb(null); return node; }
-  };
-  return node;
-};
+const relays = [
+  'https://gun-manhattan.herokuapp.com/gun',
+  'https://peer.wall.org/gun',
+  'https://gundb.eric.ovh/gun'
+];
 
-export const p2p = {
-  gun: null,
-  posts: mockNode(),
-  users: mockNode(),
-  globalChat: mockNode(),
-  typing: mockNode(),
-  sync: () => { /* No-op to prevent errors */ }
+// Initialize Gun with public relays
+export const gun = Gun({
+  peers: relays
+});
+
+export const user = gun.user().recall({ sessionStorage: true });
+
+export const mesh = {
+  posts: gun.get('cp_v1_global_posts'),
+  users: gun.get('cp_v1_global_users'),
+  chats: gun.get('cp_v1_global_chats')
 };

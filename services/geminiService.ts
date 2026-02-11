@@ -3,7 +3,8 @@ import { GoogleGenAI } from "@google/genai";
 
 export const getCreativeFeedback = async (caption: string, rating: number) => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    // Correct initialization: using process.env.API_KEY directly as per guidelines.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `An artist posted: "${caption}" and it received a rating of ${rating}/5. 
@@ -18,7 +19,8 @@ export const getCreativeFeedback = async (caption: string, rating: number) => {
 
 export const generateArtPrompt = async (theme: string) => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    // Correct initialization: using process.env.API_KEY directly as per guidelines.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `Generate a detailed artistic prompt for an image generator based on this theme: "${theme}". 
@@ -32,7 +34,8 @@ export const generateArtPrompt = async (theme: string) => {
 
 export const generateCreativeImage = async (prompt: string) => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    // Correct initialization: using process.env.API_KEY directly as per guidelines.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: { parts: [{ text: prompt }] },

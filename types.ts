@@ -41,6 +41,7 @@ export interface Post {
   comments: Comment[];
   createdAt: string;
   deadline?: string;
+  progress?: number; // 0-100 for goals
 }
 
 export interface Comment {
@@ -75,5 +76,5 @@ export interface PulseNotification {
   timestamp: number;
 }
 
-export type AppView = 'feed' | 'room' | 'profile' | 'create' | 'chat' | 'other-profile' | 'discovery';
+export type AppView = 'feed' | 'room' | 'profile' | 'create' | 'chat' | 'other-profile' | 'discovery' | 'calendar';
 export type AppTheme = 'sanctuary' | 'midnight' | 'cyber' | 'paper';

@@ -8,6 +8,7 @@ import ChatView from './components/ChatView';
 import ProfileView from './components/ProfileView';
 import AuthView from './components/AuthView';
 import DiscoveryView from './components/DiscoveryView';
+import ManifestoView from './components/ManifestoView';
 import NotificationToast from './components/NotificationToast';
 import { Post, AppView, User, PulseNotification } from './types';
 import { storage } from './services/storageService';
@@ -22,51 +23,22 @@ const App: React.FC = () => {
   const [notifications, setNotifications] = useState<PulseNotification[]>([]);
   const [networkStatus, setNetworkStatus] = useState<'online' | 'syncing' | 'offline'>('online');
 
-  const refreshData = () => {
-    setGlobalPosts(storage.getGlobalFeed());
-    const session = storage.getSession();
-    if (session) setCurrentUser(session);
-  };
-
   useEffect(() => {
     const session = storage.getSession();
     setCurrentUser(session);
-    setGlobalPosts(storage.getGlobalFeed());
+    
+    // Subscribe to Global Real-time Feed
+    storage.getGlobalFeed((posts) => {
+      setGlobalPosts(posts);
+      setNetworkStatus('online');
+    });
     
     const theme = storage.getTheme();
     document.documentElement.setAttribute('data-theme', theme);
     setIsReady(true);
 
-    // Universal Sync Listener for Multi-Tab support on Vercel
-    const handleStorageChange = (e: StorageEvent) => {
-      // Only refresh if the change was to our registry or session
-      if (e.key === 'cp_universal_v1_registry' || e.key === 'cp_universal_v1_session') {
-        setNetworkStatus('syncing');
-        refreshData();
-        setTimeout(() => setNetworkStatus('online'), 800);
-      }
-    };
-    window.addEventListener('storage', handleStorageChange);
-
-    const unsubscribe = realtime.subscribe((msg) => {
-      refreshData();
-      if (msg.sender === 'remote') {
-        const newNotif: PulseNotification = {
-          id: `notif-${Date.now()}`,
-          text: msg.type === 'NEW_POST' ? 'dropped a manifesto.' : 'interacting with the pulse.',
-          type: 'post',
-          userName: msg.payload?.author?.name || 'Peer',
-          timestamp: Date.now()
-        };
-        setNotifications(prev => [newNotif, ...prev.slice(0, 4)]);
-      }
-    });
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      unsubscribe();
-    };
-  }, [currentUser?.id]);
+    return () => {};
+  }, []);
 
   const handleLogout = () => {
     storage.logout();
@@ -88,18 +60,16 @@ const App: React.FC = () => {
   if (!currentUser) {
     return <AuthView onAuthSuccess={(user) => {
       setCurrentUser(user);
-      refreshData();
     }} />;
   }
 
   return (
     <Layout activeView={view} setActiveView={setView} onLogout={handleLogout}>
-      {/* Network Status Indicator */}
       <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[300] pointer-events-none">
         <div className={`px-4 py-1.5 rounded-full border-2 border-[var(--border)] bg-[var(--card-bg)] shadow-xl flex items-center gap-3 transition-all duration-500 ${networkStatus === 'syncing' ? 'scale-110' : 'scale-100 opacity-60 hover:opacity-100'}`}>
-          <div className={`w-2 h-2 rounded-full ${networkStatus === 'online' ? 'bg-green-500' : networkStatus === 'syncing' ? 'bg-amber-500 animate-ping' : 'bg-red-500'}`}></div>
+          <div className={`w-2 h-2 rounded-full ${networkStatus === 'online' ? 'bg-green-500' : 'bg-amber-500 animate-ping'}`}></div>
           <span className="text-[8px] font-bold uppercase tracking-widest">
-            {networkStatus === 'online' ? 'Global Mesh Connected' : networkStatus === 'syncing' ? 'Syncing Universal State' : 'Disconnected'}
+            {networkStatus === 'online' ? 'Global Mesh Connected' : 'Syncing...'}
           </span>
         </div>
       </div>
@@ -117,32 +87,23 @@ const App: React.FC = () => {
               <div className="bg-[var(--primary)] text-white p-4 chunky-card !shadow-none !border-0 rotate-[-1deg] inline-block mb-3">
                  <h2 className="text-3xl md:text-5xl font-display leading-none uppercase tracking-tight">Global.</h2>
               </div>
-              <div className="hidden sm:block">
-                 <p className="text-[7px] font-bold uppercase tracking-[0.4em] opacity-40 text-right">Universal Artist Node</p>
-                 <div className="flex items-center gap-2 mt-1 justify-end">
-                   <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
-                   <span className="text-[8px] font-mono opacity-60">LIVE_P2P_MESH</span>
-                 </div>
-              </div>
             </div>
           </header>
           
-          <div className="space-y-16">
+          <div className="space-y-16 pb-32">
             {globalPosts.map(post => (
               <PostCard 
                 key={post.id} 
                 post={post} 
                 onUpdate={(up) => {
-                  storage.savePost(post.author.id, up);
-                  refreshData();
-                  realtime.send('UPDATE_FEED', { post: up });
+                  storage.savePost(up);
                 }}
                 onUserClick={navigateToUser}
               />
             ))}
             {globalPosts.length === 0 && (
               <div className="py-32 text-center opacity-20 italic">
-                 The global pulse is silent. Be the first to broadcast.
+                 Searching the global pulse...
               </div>
             )}
           </div>
@@ -152,6 +113,8 @@ const App: React.FC = () => {
       {view === 'discovery' && (
         <DiscoveryView currentUser={currentUser} onArtistClick={navigateToUser} />
       )}
+
+      {view === 'calendar' && <ManifestoView currentUser={currentUser} />}
 
       {view === 'chat' && <ChatView currentUser={currentUser} />}
       {view === 'room' && <Room onExit={() => setView('feed')} />}
@@ -166,9 +129,7 @@ const App: React.FC = () => {
           comments: [],
           createdAt: new Date().toISOString()
         };
-        storage.savePost(currentUser.id, newPost);
-        refreshData();
-        realtime.send('NEW_POST', newPost);
+        storage.savePost(newPost);
         setView('feed');
       }} />}
       

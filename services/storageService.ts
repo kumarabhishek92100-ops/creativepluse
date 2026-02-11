@@ -1,18 +1,31 @@
 
 import { Post, Chat, Message, AppTheme, User, AvatarConfig } from '../types';
+import { gun, user, mesh } from './gunService';
 
-// We simulate the P2P backbone using a shared registry in this environment 
-// but structured for easy transition to a real P2P relay like GunDB or Firebase.
-const REGISTRY_KEY = 'cp_universal_v1_registry';
 const SESSION_KEY = 'cp_universal_v1_session';
 const THEME_KEY = 'cp_universal_v1_theme';
 
-async function hashPassword(password: string) {
-  const msgUint8 = new TextEncoder().encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
+// Cache for synchronous access to global data streams
+let cachedPosts: Post[] = [];
+let cachedUsers: User[] = [];
+
+// Initialize background listeners to keep the local cache synchronized with the Gun mesh
+mesh.posts.map().on((data: any, id: string) => {
+  if (data && data.id) {
+    const postsMap = new Map(cachedPosts.map(p => [p.id, p]));
+    postsMap.set(id, { ...data });
+    cachedPosts = Array.from(postsMap.values())
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+});
+
+mesh.users.map().on((data: any, id: string) => {
+  if (data && data.name) {
+    const usersMap = new Map(cachedUsers.map(u => [u.id, u]));
+    usersMap.set(id, { ...data });
+    cachedUsers = Array.from(usersMap.values());
+  }
+});
 
 export const getAvatarUrl = (config: AvatarConfig, seed: string) => {
   const params = new URLSearchParams();
@@ -23,66 +36,58 @@ export const getAvatarUrl = (config: AvatarConfig, seed: string) => {
 };
 
 export const storage = {
-  // To make this "Universal", we simulate a central cloud registry 
-  // In a production app, this would be an API call to a database.
-  _getGlobalRegistry(): any {
-    return JSON.parse(localStorage.getItem(REGISTRY_KEY) || '{}');
+  async createAccount(alias: string, pass: string): Promise<{user: User | null, error?: string}> {
+    return new Promise((resolve) => {
+      user.create(alias, pass, (ack: any) => {
+        if (ack.err) {
+          resolve({ user: null, error: ack.err });
+        } else {
+          const id = `u-${Math.random().toString(36).substr(2, 9)}`;
+          const newUser: User = {
+            id,
+            name: alias,
+            avatar: `https://api.dicebear.com/7.x/big-smile/svg?seed=${id}`,
+            role: 'Global Creator',
+            joinedAt: new Date().toISOString(),
+            bio: 'Joined the universal pulse.',
+            followers: [],
+            following: []
+          };
+          
+          // Save to global user list
+          mesh.users.get(alias).put(newUser);
+          
+          this.login(alias, pass).then(res => resolve(res));
+        }
+      });
+    });
   },
 
-  _saveGlobalRegistry(registry: any) {
-    localStorage.setItem(REGISTRY_KEY, JSON.stringify(registry));
-    // Trigger a storage event for other tabs to hear
-    window.dispatchEvent(new Event('storage'));
+  async login(alias: string, pass: string): Promise<{user: User | null, error?: string}> {
+    return new Promise((resolve) => {
+      user.auth(alias, pass, (ack: any) => {
+        if (ack.err) {
+          resolve({ user: null, error: ack.err });
+        } else {
+          // Fetch user profile from the mesh
+          mesh.users.get(alias).once((data: any) => {
+            const profile = data || {
+              id: `u-${alias}`,
+              name: alias,
+              avatar: `https://api.dicebear.com/7.x/big-smile/svg?seed=${alias}`,
+              role: 'Global Creator',
+              joinedAt: new Date().toISOString()
+            };
+            this.setSession(profile);
+            resolve({ user: profile });
+          });
+        }
+      });
+    });
   },
 
-  async createAccount(name: string, pass: string): Promise<{user: User, error?: string}> {
-    const registry = this._getGlobalRegistry();
-    const alias = name.toLowerCase().trim();
-    if (registry[alias]) return { user: null as any, error: "Alias already claimed globally." };
-    
-    const id = `u-${Math.random().toString(36).substr(2, 9)}`;
-    const passHash = await hashPassword(pass);
-    
-    const newUser: User = {
-      id,
-      name: name.trim(),
-      avatar: `https://api.dicebear.com/7.x/big-smile/svg?seed=${id}`,
-      role: 'Global Creator',
-      joinedAt: new Date().toISOString(),
-      bio: 'Joined the universal pulse.',
-      followers: [],
-      following: []
-    };
-
-    registry[alias] = {
-      user: newUser,
-      passHash,
-      posts: [],
-      chats: []
-    };
-
-    this._saveGlobalRegistry(registry);
-    this.setSession(newUser);
-    return { user: newUser };
-  },
-
-  async login(name: string, pass: string): Promise<{user: User | null, error?: string}> {
-    const registry = this._getGlobalRegistry();
-    const alias = name.toLowerCase().trim();
-    const account = registry[alias];
-    
-    if (!account) return { user: null, error: "Identity not found in the pulse." };
-    
-    const passHash = await hashPassword(pass);
-    if (account.passHash !== passHash) return { user: null, error: "Invalid private key." };
-    
-    this.setSession(account.user);
-    return { user: account.user };
-  },
-
-  // Use standard methods instead of arrow functions to ensure correct 'this' context
-  setSession(user: User) {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+  setSession(userData: User) {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(userData));
   },
 
   getSession(): User | null {
@@ -97,87 +102,36 @@ export const storage = {
   },
 
   logout() {
+    user.leave();
     localStorage.removeItem(SESSION_KEY);
   },
 
-  _getAccount(userId: string) {
-    const registry = this._getGlobalRegistry();
-    return Object.values(registry).find((a: any) => a.user.id === userId) as any;
-  },
-
-  _updateAccount(userId: string, updates: any) {
-    const registry = this._getGlobalRegistry();
-    const alias = Object.keys(registry).find(k => registry[k].user.id === userId);
-    if (alias) {
-      registry[alias] = { ...registry[alias], ...updates };
-      this._saveGlobalRegistry(registry);
+  // Updated to support optional callback while returning current cache for synchronous calls
+  getGlobalFeed(callback?: (posts: Post[]) => void): Post[] {
+    if (callback) {
+      mesh.posts.map().on((data: any, id: string) => {
+        if (data && data.id) {
+          callback(cachedPosts);
+        }
+      });
     }
+    return cachedPosts;
   },
 
-  getGlobalFeed(): Post[] {
-    const registry = this._getGlobalRegistry();
-    const currentUser = this.getSession();
-    let allPosts: Post[] = [];
-    
-    Object.values(registry).forEach((acc: any) => {
-      if (acc.posts) {
-        acc.posts.forEach((post: Post) => {
-          const isOwn = currentUser && post.author.id === currentUser.id;
-          const isPublic = post.visibility === 'public';
-          const isFollowing = currentUser && currentUser.following?.includes(post.author.id);
-          
-          if (isOwn || isPublic || isFollowing) {
-            allPosts.push(post);
-          }
-        });
-      }
-    });
-
-    return allPosts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() || b.id.localeCompare(a.id));
+  savePost(post: Post) {
+    mesh.posts.get(post.id).put(post);
   },
 
-  savePost(userId: string, post: Post) {
-    const acc = this._getAccount(userId);
-    if (acc) {
-      const posts = [post, ...(acc.posts || [])];
-      this._updateAccount(userId, { posts });
+  // Updated to support optional callback while returning current cache for synchronous calls
+  getAllArtists(callback?: (users: User[]) => void): User[] {
+    if (callback) {
+      mesh.users.map().on((data: any, id: string) => {
+        if (data && data.name) {
+          callback(cachedUsers);
+        }
+      });
     }
-  },
-
-  getPosts(userId: string): Post[] {
-    const acc = this._getAccount(userId);
-    return acc ? (acc.posts || []) : [];
-  },
-
-  getAllArtists(): User[] {
-    const registry = this._getGlobalRegistry();
-    return Object.values(registry).map((acc: any) => acc.user);
-  },
-
-  toggleFollow(currentUserId: string, targetUserId: string) {
-    const currentAcc = this._getAccount(currentUserId);
-    const targetAcc = this._getAccount(targetUserId);
-    // Added safety checks for account and user objects to resolve 'possibly undefined' errors
-    if (!currentAcc || !targetAcc || !currentAcc.user || !targetAcc.user) return;
-
-    let following: string[] = currentAcc.user.following || [];
-    let followers: string[] = targetAcc.user.followers || [];
-
-    if (following.includes(targetUserId)) {
-      following = following.filter((id: string) => id !== targetUserId);
-      followers = followers.filter((id: string) => id !== currentUserId);
-    } else {
-      following = [...following, targetUserId];
-      followers = [...followers, currentUserId];
-    }
-
-    this._updateAccount(currentUserId, { user: { ...currentAcc.user, following } });
-    this._updateAccount(targetUserId, { user: { ...targetAcc.user, followers } });
-    
-    const session = this.getSession();
-    if (session && session.id === currentUserId) {
-      this.setSession({ ...session, following });
-    }
+    return cachedUsers;
   },
 
   getTheme(): AppTheme {
@@ -189,59 +143,92 @@ export const storage = {
     document.documentElement.setAttribute('data-theme', theme);
   },
 
-  saveUser(user: User) {
-    this.setSession(user);
-    this._updateAccount(user.id, { user });
+  saveUser(userData: User) {
+    this.setSession(userData);
+    mesh.users.get(userData.name).put(userData);
   },
 
+  // Implementation of missing methods for the Chat system (Local storage for session persistence)
   getChats(userId: string): Chat[] {
-    return this._getAccount(userId)?.chats || [];
+    try {
+      const data = localStorage.getItem(`chats_${userId}`);
+      return data ? JSON.parse(data) : [];
+    } catch(e) { return []; }
   },
 
   saveChats(userId: string, chats: Chat[]) {
-    this._updateAccount(userId, { chats });
+    localStorage.setItem(`chats_${userId}`, JSON.stringify(chats));
   },
 
   sendMessage(chatId: string, message: Message): Chat[] {
     const user = this.getSession();
     if (!user) return [];
-    const acc = this._getAccount(user.id);
-    if (!acc) return [];
-    
-    const chats = (acc.chats || []).map((c: Chat) => {
+    const chats = this.getChats(user.id);
+    const updated = chats.map(c => {
       if (c.id === chatId) {
-        return {
-          ...c,
-          messages: [...c.messages, message],
-          lastMessage: message.text
+        return { 
+          ...c, 
+          messages: [...c.messages, message], 
+          lastMessage: message.text 
         };
       }
       return c;
     });
-    
-    this._updateAccount(user.id, { chats });
-    return chats;
+    this.saveChats(user.id, updated);
+    return updated;
   },
 
-  exportWorkspace() {
-    const registry = this._getGlobalRegistry();
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(registry));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", "pulse_workspace_backup.json");
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
+  createGroup(ownerId: string, groupName: string, participants: User[]): Chat {
+    const newChat: Chat = {
+      id: `group-${Date.now()}`,
+      participants,
+      messages: [],
+      isGroup: true,
+      groupName,
+      lastMessage: 'Group manifested.'
+    };
+    const chats = this.getChats(ownerId);
+    this.saveChats(ownerId, [newChat, ...chats]);
+    return newChat;
+  },
+
+  addParticipantToGroup(userId: string, chatId: string, artist: User): Chat[] {
+    const chats = this.getChats(userId);
+    const updated = chats.map(c => {
+      if (c.id === chatId) {
+        return { ...c, participants: [...c.participants, artist] };
+      }
+      return c;
+    });
+    this.saveChats(userId, updated);
+    return updated;
+  },
+
+  // Implementation of missing methods for Profile and Workspace management
+  getPosts(userId: string): Post[] {
+    return cachedPosts.filter(p => p.author.id === userId);
   },
 
   importWorkspace(content: string): boolean {
     try {
-      const registry = JSON.parse(content);
-      if (typeof registry !== 'object' || registry === null) return false;
-      this._saveGlobalRegistry(registry);
+      const data = JSON.parse(content);
+      if (data.user) this.setSession(data.user);
+      if (data.chats && data.user) this.saveChats(data.user.id, data.chats);
       return true;
-    } catch (e) {
-      return false;
-    }
+    } catch(e) { return false; }
+  },
+
+  exportWorkspace() {
+    const user = this.getSession();
+    if (!user) return;
+    const chats = this.getChats(user.id);
+    const data = JSON.stringify({ user, chats });
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pulse_backup_${user.name}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 };
