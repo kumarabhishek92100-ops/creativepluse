@@ -4,7 +4,9 @@ declare var Gun: any;
 const relays = [
   'https://gun-manhattan.herokuapp.com/gun',
   'https://peer.wall.org/gun',
-  'https://gundb.eric.ovh/gun'
+  'https://gundb.eric.ovh/gun',
+  'https://gun-us.herokuapp.com/gun',
+  'https://gun-eu.herokuapp.com/gun'
 ];
 
 // Initialize Gun with public relays

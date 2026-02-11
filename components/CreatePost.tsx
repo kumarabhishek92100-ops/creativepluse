@@ -30,6 +30,11 @@ const CreatePost: React.FC<CreatePostProps> = ({ onPublish }) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Auto-detect type
+    if (file.type.startsWith('image/')) setActiveType('photo');
+    else if (file.type.startsWith('video/')) setActiveType('video');
+    else if (file.type.startsWith('audio/')) setActiveType('audio');
+
     const reader = new FileReader();
     reader.onloadend = () => {
       setMediaPreview(reader.result as string);

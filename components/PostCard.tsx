@@ -82,17 +82,19 @@ const PostCard: React.FC<PostCardProps> = ({ post, onUpdate, onUserClick }) => {
     storage.updateRating(post.id, newVal);
   };
 
+  if (!post.author) return null;
+
   return (
     <div className="chunky-card rounded-[3rem] overflow-hidden bg-[var(--card-bg)] animate-fade-in mb-12">
       <div className="p-6 border-b-2 border-[var(--border)] flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <button onClick={() => onUserClick?.(post.author.id)} className="flex items-center space-x-4 hover:opacity-70 transition-opacity">
             <div className="w-12 h-12 rounded-2xl border-2 border-[var(--border)] overflow-hidden shadow-sm bg-white">
-              <img src={post.author.avatar} alt="" className="w-full h-full object-cover" />
+              <img src={post.author.avatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=fallback'} alt="" className="w-full h-full object-cover" />
             </div>
             <div className="text-left">
-              <h4 className="font-heading text-sm uppercase tracking-tight">{post.author.name}</h4>
-              <span className="text-[9px] font-bold opacity-40 uppercase tracking-widest">{post.author.role}</span>
+              <h4 className="font-heading text-sm uppercase tracking-tight">{post.author.name || 'Anonymous'}</h4>
+              <span className="text-[9px] font-bold opacity-40 uppercase tracking-widest">{post.author.role || 'Artist'}</span>
             </div>
           </button>
         </div>
@@ -125,6 +127,14 @@ const PostCard: React.FC<PostCardProps> = ({ post, onUpdate, onUserClick }) => {
           <div className="rounded-[2.5rem] border-2 border-[var(--border)] overflow-hidden aspect-square relative bg-neutral-100">
              {post.imageUrl ? (
                <img src={post.imageUrl} className="w-full h-full object-cover" alt="" />
+             ) : post.videoUrl ? (
+               <video src={post.videoUrl} className="w-full h-full object-cover" controls />
+             ) : post.audioUrl ? (
+               <div className="w-full h-full flex flex-col items-center justify-center p-12 bg-[var(--accent)]/10">
+                  <span className="text-6xl mb-6">🎙️</span>
+                  <audio src={post.audioUrl} className="w-full" controls />
+                  <p className="mt-8 text-xl font-display uppercase opacity-20 italic">Audio Fragment</p>
+               </div>
              ) : (
                <div className="w-full h-full flex items-center justify-center p-12 text-center">
                   <p className="text-2xl font-display uppercase leading-tight italic opacity-20">{post.caption}</p>

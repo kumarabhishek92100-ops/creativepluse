@@ -18,6 +18,16 @@ export const getAvatarUrl = (config: AvatarConfig, seed: string) => {
   return `https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}&${params.toString()}`;
 };
 
+const safeParse = (data: any, fallback: any) => {
+  if (typeof data !== 'string') return data || fallback;
+  try {
+    return JSON.parse(data);
+  } catch (e) {
+    console.error("Parse Error:", e);
+    return fallback;
+  }
+};
+
 export const storage = {
   // Decentralized Auth using Gun SEA
   async createAccount(alias: string, pass: string): Promise<{user: User | null, error?: string}> {
@@ -103,10 +113,13 @@ export const storage = {
       try {
         const post: Post = {
           ...data,
-          author: typeof data.author === 'string' ? JSON.parse(data.author) : data.author,
-          comments: typeof data.comments === 'string' ? JSON.parse(data.comments) : (data.comments || []),
-          likedBy: typeof data.likedBy === 'string' ? JSON.parse(data.likedBy) : (data.likedBy || [])
+          author: safeParse(data.author, { name: 'Unknown Artist', avatar: '', role: 'Artist' }),
+          comments: safeParse(data.comments, []),
+          likedBy: safeParse(data.likedBy, [])
         };
+        
+        // Final fallback for missing required fields
+        if (!post.author.name) post.author.name = "Anonymous";
         
         postsMap.set(id, post);
         const sorted = Array.from(postsMap.values())
@@ -114,26 +127,38 @@ export const storage = {
         
         callback(sorted);
       } catch (e) {
-        console.error("Failed to parse global post", e);
+        console.error("Failed to process global post update", e);
       }
     });
   },
 
   savePost(post: Post) {
-    // Stringify objects for Gun graph compatibility
-    const flatPost = {
-      ...post,
+    // Stringify objects for Gun graph compatibility and strip undefined
+    const flatPost: any = {
+      id: post.id,
+      type: post.type,
+      visibility: post.visibility,
+      caption: post.caption || '',
+      createdAt: post.createdAt,
+      likes: post.likes || 0,
+      rating: post.rating || 5,
       author: JSON.stringify(post.author),
       comments: JSON.stringify(post.comments || []),
       likedBy: JSON.stringify(post.likedBy || [])
     };
+
+    if (post.imageUrl) flatPost.imageUrl = post.imageUrl;
+    if (post.videoUrl) flatPost.videoUrl = post.videoUrl;
+    if (post.audioUrl) flatPost.audioUrl = post.audioUrl;
+    if (post.deadline) flatPost.deadline = post.deadline;
+
     GLOBAL_POSTS.get(post.id).put(flatPost);
   },
 
   saveComment(postId: string, comment: Comment) {
     GLOBAL_POSTS.get(postId).once((data: any) => {
       if (!data) return;
-      const comments = typeof data.comments === 'string' ? JSON.parse(data.comments) : [];
+      const comments = safeParse(data.comments, []);
       comments.push(comment);
       GLOBAL_POSTS.get(postId).get('comments').put(JSON.stringify(comments));
     });
@@ -215,8 +240,6 @@ export const storage = {
   },
 
   getPosts(userId: string): Post[] {
-    // Filter the global cache for this user's posts
-    // This is handled by the App state usually
     return [];
   },
 
