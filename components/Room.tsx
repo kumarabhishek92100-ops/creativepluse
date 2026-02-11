@@ -6,6 +6,7 @@ interface RoomProps {
   onExit: () => void;
 }
 
+// Manual implementation of encode as per Live API guidelines
 function encode(bytes: Uint8Array) {
   let binary = '';
   const len = bytes.byteLength;
@@ -13,6 +14,7 @@ function encode(bytes: Uint8Array) {
   return btoa(binary);
 }
 
+// Manual implementation of decode as per Live API guidelines
 function decode(base64: string) {
   const binaryString = atob(base64);
   const bytes = new Uint8Array(binaryString.length);
@@ -20,6 +22,7 @@ function decode(base64: string) {
   return bytes;
 }
 
+// Manual implementation of audio decoding logic as per Live API guidelines
 async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate: number, numChannels: number): Promise<AudioBuffer> {
   const dataInt16 = new Int16Array(data.buffer);
   const frameCount = dataInt16.length / numChannels;
@@ -45,6 +48,7 @@ const Room: React.FC<RoomProps> = ({ onExit }) => {
   const inputAudioContext = useRef<AudioContext | null>(null);
   const outputAudioContext = useRef<AudioContext | null>(null);
   const nextStartTime = useRef(0);
+  const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
 
   useEffect(() => {
     if (inLobby) {
@@ -92,13 +96,28 @@ const Room: React.FC<RoomProps> = ({ onExit }) => {
             const inputData = e.inputBuffer.getChannelData(0);
             const int16 = new Int16Array(inputData.length);
             for (let i = 0; i < inputData.length; i++) int16[i] = inputData[i] * 32768;
-            sessionPromise.then(s => s.sendRealtimeInput({ media: { data: encode(new Uint8Array(int16.buffer)), mimeType: 'audio/pcm;rate=16000' } }));
+            // Solely rely on sessionPromise resolve to send audio input as per guidelines
+            sessionPromise.then(s => s.sendRealtimeInput({ 
+              media: { 
+                data: encode(new Uint8Array(int16.buffer)), 
+                mimeType: 'audio/pcm;rate=16000' 
+              } 
+            }));
           };
           source.connect(scriptProcessor);
           scriptProcessor.connect(inputAudioContext.current!.destination);
         },
         onmessage: async (msg) => {
-          // Fixed possibly undefined error with optional chaining
+          // Handle interruptions as per Live API guidelines
+          if (msg.serverContent?.interrupted) {
+            sourcesRef.current.forEach(source => {
+              try { source.stop(); } catch(e) {}
+            });
+            sourcesRef.current.clear();
+            nextStartTime.current = 0;
+            return;
+          }
+
           const parts = msg.serverContent?.modelTurn?.parts;
           const audio = parts && parts.length > 0 ? parts[0]?.inlineData?.data : null;
           
@@ -107,14 +126,25 @@ const Room: React.FC<RoomProps> = ({ onExit }) => {
             const source = outputAudioContext.current.createBufferSource();
             source.buffer = buffer;
             source.connect(outputAudioContext.current.destination);
+            
+            // Gapless playback queueing using nextStartTime running cursor
             nextStartTime.current = Math.max(nextStartTime.current, outputAudioContext.current.currentTime);
             source.start(nextStartTime.current);
             nextStartTime.current += buffer.duration;
+            
+            sourcesRef.current.add(source);
+            source.onended = () => sourcesRef.current.delete(source);
           }
         },
         onclose: () => setAiActive(false),
       },
-      config: { responseModalities: [Modality.AUDIO], systemInstruction: "You are the Workshop Muse. Poetic and supportive." }
+      config: { 
+        responseModalities: [Modality.AUDIO], 
+        speechConfig: {
+          voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }
+        },
+        systemInstruction: "You are the Workshop Muse. Poetic, supportive, and focused on creative manifestation." 
+      }
     });
   };
 

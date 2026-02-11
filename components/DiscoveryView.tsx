@@ -19,11 +19,17 @@ const DiscoveryView: React.FC<{ currentUser: User, onArtistClick: (id: string) =
   const [loadingGlobal, setLoadingGlobal] = useState(false);
   const [nearbyInspo, setNearbyInspo] = useState<string | null>(null);
   const [groundingLinks, setGroundingLinks] = useState<{title: string, uri: string}[]>([]);
+  const [globalGroundingLinks, setGlobalGroundingLinks] = useState<{title: string, uri: string}[]>([]);
 
   useEffect(() => {
+    // Live update artist mesh from GunDB
+    const initialArtists = storage.getAllArtists();
+    setLocalArtists(initialArtists.filter(a => a.id !== currentUser.id));
+
     storage.getAllArtists((users) => {
       setLocalArtists(users.filter(a => a.id !== currentUser.id));
     });
+    
     fetchGlobalMesh();
   }, [currentUser.id]);
 
@@ -40,14 +46,23 @@ const DiscoveryView: React.FC<{ currentUser: User, onArtistClick: (id: string) =
       });
 
       const text = response.text || "";
+      // Extract search grounding URLs as per Gemini API guidelines
+      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      const links = chunks.filter((c: any) => c.web).map((c: any) => ({
+        title: c.web.title,
+        uri: c.web.uri
+      }));
+      setGlobalGroundingLinks(links);
+
       const artists: GlobalArtist[] = [];
       const lines = text.split('\n').filter(l => l.length > 5);
       for(let i=0; i < Math.min(lines.length, 5); i++) {
+        const namePart = lines[i].split(':')[0]?.replace(/^\d+\.\s*/, '').trim() || 'Global Artist';
         artists.push({
-          name: lines[i].split(':')[0]?.replace(/^\d+\.\s*/, '') || 'Global Artist',
+          name: namePart,
           role: 'External Node',
           bio: lines[i].split(':')[1] || 'Capturing the global creative pulse.',
-          avatar: `https://api.dicebear.com/7.x/identicon/svg?seed=${Math.random()}`,
+          avatar: `https://api.dicebear.com/7.x/identicon/svg?seed=${namePart}`,
           url: '#'
         });
       }
@@ -78,6 +93,7 @@ const DiscoveryView: React.FC<{ currentUser: User, onArtistClick: (id: string) =
             }
           },
         });
+        // Extract Maps grounding URLs as per Gemini API guidelines
         const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
         const links = chunks.filter((c: any) => c.maps).map((c: any) => ({
           title: c.maps.title,
@@ -108,7 +124,7 @@ const DiscoveryView: React.FC<{ currentUser: User, onArtistClick: (id: string) =
                 {nearbyInspo}
                 <div className="mt-4 flex flex-wrap gap-2">
                   {groundingLinks.map((l, i) => (
-                    <a key={i} href={l.uri} target="_blank" className="sticker !bg-[var(--primary)] text-white">📍 {l.title}</a>
+                    <a key={i} href={l.uri} target="_blank" rel="noopener noreferrer" className="sticker !bg-[var(--primary)] text-white">📍 {l.title}</a>
                   ))}
                 </div>
               </div>
@@ -135,6 +151,14 @@ const DiscoveryView: React.FC<{ currentUser: User, onArtistClick: (id: string) =
 
       <section className="mb-20">
         <h3 className="font-display text-xl uppercase mb-8 opacity-40">External Nodes (Global Trending)</h3>
+        {/* Added list of grounding URLs for the search tool as per guidelines */}
+        {globalGroundingLinks.length > 0 && (
+          <div className="mb-8 flex flex-wrap gap-2">
+            {globalGroundingLinks.map((l, i) => (
+              <a key={i} href={l.uri} target="_blank" rel="noopener noreferrer" className="sticker !bg-[var(--accent)] text-white text-[8px]">🔗 {l.title}</a>
+            ))}
+          </div>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
           {loadingGlobal ? (
             <div className="col-span-full py-20 text-center animate-pulse uppercase font-bold tracking-widest opacity-20">Syncing with Global Satellites...</div>
@@ -170,6 +194,9 @@ const DiscoveryView: React.FC<{ currentUser: User, onArtistClick: (id: string) =
               <button onClick={() => onArtistClick(artist.id)} className="text-[9px] font-bold uppercase underline tracking-widest hover:text-[var(--primary)]">View Studio</button>
             </div>
           ))}
+          {filteredLocal.length === 0 && (
+            <p className="col-span-full py-20 text-center opacity-30 italic uppercase text-xs">Waiting for artists to sync to the mesh...</p>
+          )}
         </div>
       </section>
     </div>

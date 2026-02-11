@@ -1,19 +1,27 @@
 
-import { Post, Chat, Message, AppTheme, User, AvatarConfig } from '../types';
+import { Post, Chat, Message, AppTheme, User, AvatarConfig, Comment } from '../types';
 import { gun, user, mesh } from './gunService';
 
 const SESSION_KEY = 'cp_universal_v1_session';
 const THEME_KEY = 'cp_universal_v1_theme';
 
-// Cache for synchronous access to global data streams
+// Cache for synchronous access to global data streams to keep UI snappy
 let cachedPosts: Post[] = [];
 let cachedUsers: User[] = [];
 
 // Initialize background listeners to keep the local cache synchronized with the Gun mesh
+// GunDB handles the heavy lifting of syncing across the internet.
 mesh.posts.map().on((data: any, id: string) => {
   if (data && data.id) {
+    // Process post from mesh
+    const post: Post = {
+      ...data,
+      // Gun can flatten arrays, so we ensure comments is always an array
+      comments: data.comments ? JSON.parse(data.comments) : [],
+      author: data.author ? JSON.parse(data.author) : { name: 'Unknown' }
+    };
     const postsMap = new Map(cachedPosts.map(p => [p.id, p]));
-    postsMap.set(id, { ...data });
+    postsMap.set(id, post);
     cachedPosts = Array.from(postsMap.values())
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
@@ -54,7 +62,7 @@ export const storage = {
             following: []
           };
           
-          // Save to global user list
+          // Save to global user list for discovery
           mesh.users.get(alias).put(newUser);
           
           this.login(alias, pass).then(res => resolve(res));
@@ -69,7 +77,6 @@ export const storage = {
         if (ack.err) {
           resolve({ user: null, error: ack.err });
         } else {
-          // Fetch user profile from the mesh
           mesh.users.get(alias).once((data: any) => {
             const profile = data || {
               id: `u-${alias}`,
@@ -106,30 +113,40 @@ export const storage = {
     localStorage.removeItem(SESSION_KEY);
   },
 
-  // Updated to support optional callback while returning current cache for synchronous calls
   getGlobalFeed(callback?: (posts: Post[]) => void): Post[] {
     if (callback) {
-      mesh.posts.map().on((data: any, id: string) => {
-        if (data && data.id) {
-          callback(cachedPosts);
-        }
-      });
+      mesh.posts.map().on(() => callback(cachedPosts));
     }
     return cachedPosts;
   },
 
   savePost(post: Post) {
-    mesh.posts.get(post.id).put(post);
+    // We stringify nested objects for GunDB storage compatibility in some public relays
+    const dataToStore = {
+      ...post,
+      author: JSON.stringify(post.author),
+      comments: JSON.stringify(post.comments || [])
+    };
+    mesh.posts.get(post.id).put(dataToStore);
   },
 
-  // Updated to support optional callback while returning current cache for synchronous calls
+  saveComment(postId: string, comment: Comment) {
+    mesh.posts.get(postId).once((data: any) => {
+      if (data) {
+        const comments = data.comments ? JSON.parse(data.comments) : [];
+        comments.push(comment);
+        mesh.posts.get(postId).get('comments').put(JSON.stringify(comments));
+      }
+    });
+  },
+
+  updateRating(postId: string, rating: number) {
+    mesh.posts.get(postId).get('rating').put(rating);
+  },
+
   getAllArtists(callback?: (users: User[]) => void): User[] {
     if (callback) {
-      mesh.users.map().on((data: any, id: string) => {
-        if (data && data.name) {
-          callback(cachedUsers);
-        }
-      });
+      mesh.users.map().on(() => callback(cachedUsers));
     }
     return cachedUsers;
   },
@@ -148,12 +165,14 @@ export const storage = {
     mesh.users.get(userData.name).put(userData);
   },
 
-  // Implementation of missing methods for the Chat system (Local storage for session persistence)
-  getChats(userId: string): Chat[] {
-    try {
-      const data = localStorage.getItem(`chats_${userId}`);
-      return data ? JSON.parse(data) : [];
-    } catch(e) { return []; }
+  // Chat implementation using the user's private mesh space
+  getChats(userId: string, callback?: (chats: Chat[]) => void): Chat[] {
+    // In a fully decentralized app, chats are stored under the user's graph
+    // For simplicity here, we stick to local for drafts but can push to mesh
+    const data = localStorage.getItem(`chats_${userId}`);
+    const localChats = data ? JSON.parse(data) : [];
+    if (callback) callback(localChats);
+    return localChats;
   },
 
   saveChats(userId: string, chats: Chat[]) {
@@ -192,19 +211,21 @@ export const storage = {
     return newChat;
   },
 
-  addParticipantToGroup(userId: string, chatId: string, artist: User): Chat[] {
+  // Fix: Added missing addParticipantToGroup method to storage object for group management.
+  addParticipantToGroup(userId: string, chatId: string, participant: User): Chat[] | null {
     const chats = this.getChats(userId);
-    const updated = chats.map(c => {
-      if (c.id === chatId) {
-        return { ...c, participants: [...c.participants, artist] };
-      }
-      return c;
-    });
-    this.saveChats(userId, updated);
-    return updated;
+    const chatIndex = chats.findIndex(c => c.id === chatId);
+    if (chatIndex === -1) return null;
+
+    const chat = chats[chatIndex];
+    if (!chat.participants.find(p => p.id === participant.id)) {
+      chat.participants = [...chat.participants, participant];
+      chat.lastMessage = `${participant.name} joined the manifestation.`;
+      this.saveChats(userId, chats);
+    }
+    return chats;
   },
 
-  // Implementation of missing methods for Profile and Workspace management
   getPosts(userId: string): Post[] {
     return cachedPosts.filter(p => p.author.id === userId);
   },
@@ -213,7 +234,6 @@ export const storage = {
     try {
       const data = JSON.parse(content);
       if (data.user) this.setSession(data.user);
-      if (data.chats && data.user) this.saveChats(data.user.id, data.chats);
       return true;
     } catch(e) { return false; }
   },
@@ -221,8 +241,7 @@ export const storage = {
   exportWorkspace() {
     const user = this.getSession();
     if (!user) return;
-    const chats = this.getChats(user.id);
-    const data = JSON.stringify({ user, chats });
+    const data = JSON.stringify({ user });
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

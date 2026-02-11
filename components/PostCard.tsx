@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Post, Comment } from '../types';
 import { GoogleGenAI } from "@google/genai";
+import { storage } from '../services/storageService';
 
 interface PostCardProps {
   post: Post;
@@ -16,6 +17,8 @@ const PostCard: React.FC<PostCardProps> = ({ post, onUpdate, onUserClick }) => {
   const [newComment, setNewComment] = useState('');
   const [progress, setProgress] = useState(0);
   const [resonating, setResonating] = useState(false);
+
+  const currentUser = storage.getSession();
 
   useEffect(() => {
     if (post.type === 'target' && post.deadline) {
@@ -52,7 +55,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, onUpdate, onUserClick }) => {
         createdAt: new Date().toLocaleDateString()
       };
       
-      onUpdate({ ...post, comments: [...(post.comments || []), peerComment] });
+      storage.saveComment(post.id, peerComment);
       setShowReviews(true);
     } finally {
       setResonating(false);
@@ -61,21 +64,22 @@ const PostCard: React.FC<PostCardProps> = ({ post, onUpdate, onUserClick }) => {
 
   const handleAddComment = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newComment.trim()) return;
+    if (!newComment.trim() || !currentUser) return;
+    
     const comment: Comment = { 
       id: `c-${Date.now()}`, 
-      author: { 
-        id: 'me', 
-        name: 'PEER', 
-        avatar: 'https://api.dicebear.com/7.x/big-smile/svg?seed=Peer', 
-        role: 'Artist',
-        joinedAt: new Date().toISOString()
-      }, 
+      author: currentUser, 
       text: newComment, 
       createdAt: new Date().toLocaleDateString()
     };
-    onUpdate({ ...post, comments: [...(post.comments || []), comment] });
+    
+    storage.saveComment(post.id, comment);
     setNewComment('');
+  };
+
+  const handleRating = (newVal: number) => {
+    setRating(newVal);
+    storage.updateRating(post.id, newVal);
   };
 
   return (
@@ -165,6 +169,11 @@ const PostCard: React.FC<PostCardProps> = ({ post, onUpdate, onUserClick }) => {
           <div className="border-t-2 border-dashed border-[var(--border)] pt-8 space-y-6 animate-fade-in">
              <div className="flex items-center justify-between mb-4">
                 <h5 className="text-[10px] font-bold uppercase tracking-widest opacity-40">Global Resonances</h5>
+                <div className="flex gap-1">
+                  {[1,2,3,4,5].map(star => (
+                    <button key={star} onClick={() => handleRating(star)} className={`text-lg transition-transform hover:scale-125 ${rating >= star ? 'grayscale-0' : 'grayscale opacity-20'}`}>⭐</button>
+                  ))}
+                </div>
              </div>
              <div className="space-y-4 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
                 {post.comments?.map(c => (
@@ -179,6 +188,9 @@ const PostCard: React.FC<PostCardProps> = ({ post, onUpdate, onUserClick }) => {
                     </div>
                   </div>
                 ))}
+                {(!post.comments || post.comments.length === 0) && (
+                  <p className="text-[10px] uppercase text-center opacity-30 py-4">No reviews yet. Be the first to resonate.</p>
+                )}
              </div>
              <form onSubmit={handleAddComment} className="flex gap-2">
                 <input 
