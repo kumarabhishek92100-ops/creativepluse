@@ -18,8 +18,8 @@ export interface User {
   avatarConfig?: AvatarConfig;
   role: string;
   bio?: string;
-  followers?: string[]; // Array of IDs
-  following?: string[]; // Array of IDs
+  followers?: string[]; // Array of aliases
+  following?: string[]; // Array of aliases
   joinedAt: string;
 }
 

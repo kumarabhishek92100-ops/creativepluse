@@ -133,7 +133,6 @@ export const storage = {
   },
 
   savePost(post: Post) {
-    // Stringify objects for Gun graph compatibility and strip undefined
     const flatPost: any = {
       id: post.id,
       type: post.type,
@@ -172,15 +171,58 @@ export const storage = {
     const usersMap = new Map<string, User>();
     GLOBAL_USERS.map().on((data: any, id: string) => {
       if (data && data.name) {
-        usersMap.set(id, data);
+        usersMap.set(data.name, data);
         callback(Array.from(usersMap.values()));
       }
     });
   },
 
+  async findUserByAlias(alias: string): Promise<User | null> {
+    return new Promise((resolve) => {
+      GLOBAL_USERS.get(alias).once((data: any) => {
+        if (data && data.name) {
+          resolve({
+            ...data,
+            following: safeParse(data.following, []),
+            followers: safeParse(data.followers, [])
+          });
+        } else {
+          resolve(null);
+        }
+      });
+    });
+  },
+
+  async followUser(currentUser: User, targetAlias: string) {
+    const targetUser = await this.findUserByAlias(targetAlias);
+    if (!targetUser) return null;
+
+    const currentFollowing = safeParse(currentUser.following, []);
+    if (!currentFollowing.includes(targetAlias)) {
+      currentFollowing.push(targetAlias);
+      const updatedUser = { ...currentUser, following: JSON.stringify(currentFollowing) };
+      GLOBAL_USERS.get(currentUser.name).put(updatedUser);
+      this.setSession({ ...currentUser, following: currentFollowing });
+    }
+
+    // Also update target's followers list
+    const targetFollowers = safeParse(targetUser.followers, []);
+    if (!targetFollowers.includes(currentUser.name)) {
+      targetFollowers.push(currentUser.name);
+      GLOBAL_USERS.get(targetAlias).get('followers').put(JSON.stringify(targetFollowers));
+    }
+
+    return targetUser;
+  },
+
   saveUser(userData: User) {
+    const dataToStore = {
+      ...userData,
+      following: JSON.stringify(userData.following || []),
+      followers: JSON.stringify(userData.followers || [])
+    };
     this.setSession(userData);
-    GLOBAL_USERS.get(userData.name).put(userData);
+    GLOBAL_USERS.get(userData.name).put(dataToStore);
   },
 
   getTheme(): AppTheme {
@@ -192,7 +234,6 @@ export const storage = {
     document.documentElement.setAttribute('data-theme', theme);
   },
 
-  // Local-only fallback for Chats (could be moved to Gun in future)
   getChats(userId: string): Chat[] {
     const data = localStorage.getItem(`chats_${userId}`);
     return data ? JSON.parse(data) : [];
@@ -243,7 +284,6 @@ export const storage = {
     return [];
   },
 
-  // Implement exportWorkspace for cloud/local backup
   exportWorkspace() {
     const userSession = this.getSession();
     const data = {
@@ -260,7 +300,6 @@ export const storage = {
     URL.revokeObjectURL(url);
   },
 
-  // Implement importWorkspace for backup restoration
   importWorkspace(content: string): boolean {
     try {
       const data = JSON.parse(content);

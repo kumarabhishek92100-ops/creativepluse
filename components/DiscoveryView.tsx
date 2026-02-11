@@ -23,7 +23,6 @@ const DiscoveryView: React.FC<{ currentUser: User, onArtistClick: (id: string) =
 
   useEffect(() => {
     // Live update artist mesh from GunDB subscription.
-    // Fix: storage.getAllArtists is reactive and expects a callback.
     storage.getAllArtists((users) => {
       setLocalArtists(users.filter(a => a.id !== currentUser.id));
     });
@@ -44,7 +43,6 @@ const DiscoveryView: React.FC<{ currentUser: User, onArtistClick: (id: string) =
       });
 
       const text = response.text || "";
-      // Extract search grounding URLs as per Gemini API guidelines
       const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
       const links = chunks.filter((c: any) => c.web).map((c: any) => ({
         title: c.web.title,
@@ -72,6 +70,11 @@ const DiscoveryView: React.FC<{ currentUser: User, onArtistClick: (id: string) =
     }
   };
 
+  const handleFollow = async (alias: string) => {
+    await storage.followUser(currentUser, alias);
+    alert(`Pulse aligned with @${alias}`);
+  };
+
   const getNearbyInspiration = async () => {
     try {
       navigator.geolocation.getCurrentPosition(async (pos) => {
@@ -91,7 +94,6 @@ const DiscoveryView: React.FC<{ currentUser: User, onArtistClick: (id: string) =
             }
           },
         });
-        // Extract Maps grounding URLs as per Gemini API guidelines
         const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
         const links = chunks.filter((c: any) => c.maps).map((c: any) => ({
           title: c.maps.title,
@@ -149,7 +151,6 @@ const DiscoveryView: React.FC<{ currentUser: User, onArtistClick: (id: string) =
 
       <section className="mb-20">
         <h3 className="font-display text-xl uppercase mb-8 opacity-40">External Nodes (Global Trending)</h3>
-        {/* Added list of grounding URLs for the search tool as per guidelines */}
         {globalGroundingLinks.length > 0 && (
           <div className="mb-8 flex flex-wrap gap-2">
             {globalGroundingLinks.map((l, i) => (
@@ -189,7 +190,15 @@ const DiscoveryView: React.FC<{ currentUser: User, onArtistClick: (id: string) =
               <img src={artist.avatar} className="w-16 h-16 rounded-[1.5rem] border-2 border-[var(--border)] mx-auto mb-4 bg-white" alt="" />
               <h4 className="font-heading text-sm uppercase truncate">{artist.name}</h4>
               <p className="text-[8px] font-bold opacity-30 uppercase mb-4 tracking-widest">{artist.role}</p>
-              <button onClick={() => onArtistClick(artist.id)} className="text-[9px] font-bold uppercase underline tracking-widest hover:text-[var(--primary)]">View Studio</button>
+              <div className="flex flex-col gap-2">
+                <button onClick={() => onArtistClick(artist.id)} className="text-[9px] font-bold uppercase underline tracking-widest hover:text-[var(--primary)]">View Studio</button>
+                <button 
+                  onClick={() => handleFollow(artist.name)}
+                  className="px-4 py-1.5 rounded-xl border-2 border-[var(--border)] text-[8px] font-bold uppercase hover:bg-[var(--primary)] hover:text-white transition-all"
+                >
+                  Align Pulse
+                </button>
+              </div>
             </div>
           ))}
           {filteredLocal.length === 0 && (

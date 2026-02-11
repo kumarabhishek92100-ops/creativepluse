@@ -25,11 +25,23 @@ const ChatView: React.FC<ChatViewProps> = ({ currentUser }) => {
   const [allArtists, setAllArtists] = useState<User[]>([]);
   const [selectedArtists, setSelectedArtists] = useState<string[]>([]);
   const [showAddMember, setShowAddMember] = useState(false);
+  const [searchHandle, setSearchHandle] = useState('');
+  const [searchStatus, setSearchStatus] = useState<'idle' | 'searching' | 'found' | 'error'>('idle');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!currentUser) return;
+    
+    // Broadcast presence every 5 seconds
+    const heartbeat = setInterval(() => {
+      realtime.send('HEARTBEAT', { 
+        userId: currentUser.id, 
+        userName: currentUser.name, 
+        avatar: currentUser.avatar 
+      });
+    }, 5000);
+
     const localChats = storage.getChats(currentUser.id);
     if (localChats.length === 0) {
       const defaultChats: Chat[] = [
@@ -47,7 +59,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentUser }) => {
       setChats(localChats);
     }
 
-    // Fix: storage.getAllArtists is reactive and expects a callback.
     storage.getAllArtists((users) => {
       setAllArtists(users.filter(a => a.id !== currentUser.id));
     });
@@ -79,12 +90,46 @@ const ChatView: React.FC<ChatViewProps> = ({ currentUser }) => {
     return () => {
       unsubscribe();
       clearInterval(cleanup);
+      clearInterval(heartbeat);
     };
   }, [currentUser?.id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chats, activeChat]);
+
+  const handleSearchFriend = async () => {
+    if (!searchHandle.trim()) return;
+    setSearchStatus('searching');
+    const handle = searchHandle.startsWith('@') ? searchHandle.slice(1) : searchHandle;
+    
+    const friend = await storage.followUser(currentUser, handle);
+    if (friend) {
+      setSearchStatus('found');
+      // Create a private chat if it doesn't exist
+      const existing = chats.find(c => !c.isGroup && c.participants.some(p => p.name === handle));
+      if (!existing) {
+        const newChat: Chat = {
+          id: `chat-${Date.now()}`,
+          participants: [friend],
+          messages: [],
+          isGroup: false,
+          lastMessage: 'New frequency aligned.'
+        };
+        const updated = [newChat, ...chats];
+        storage.saveChats(currentUser.id, updated);
+        setChats(updated);
+        setActiveChat(newChat);
+      } else {
+        setActiveChat(existing);
+      }
+      setSearchHandle('');
+      setTimeout(() => setSearchStatus('idle'), 2000);
+    } else {
+      setSearchStatus('error');
+      setTimeout(() => setSearchStatus('idle'), 2000);
+    }
+  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,7 +150,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentUser }) => {
 
     if (activeChat.participants.some(p => p.id.startsWith('ai-'))) {
       setIsTyping(true);
-      // Correct initialization: using process.env.API_KEY directly as per guidelines.
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       try {
         const response = await ai.models.generateContent({
@@ -155,19 +199,37 @@ const ChatView: React.FC<ChatViewProps> = ({ currentUser }) => {
     <div className="flex h-screen bg-transparent overflow-hidden">
       {/* Sidebar */}
       <div className={`${activeChat ? 'hidden md:flex' : 'flex'} w-full md:w-80 lg:w-96 flex-col border-r border-[var(--border)] bg-[var(--nav-bg)] backdrop-blur-xl`}>
-        <div className="p-6 flex justify-between items-center">
-          <div>
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
             <h2 className="font-display text-2xl uppercase tracking-tighter">Muses</h2>
-            <div className="mt-2 sticker !rotate-0 text-[8px] bg-[var(--primary)] text-white">Local Encrypted Channel</div>
+            <button onClick={() => setShowManifestGroup(true)} className="w-10 h-10 rounded-full border-2 border-[var(--border)] flex items-center justify-center bg-white hover:scale-110 transition-all shadow-sm">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M12 4v16m8-8H4"></path></svg>
+            </button>
           </div>
-          <button onClick={() => setShowManifestGroup(true)} className="w-10 h-10 rounded-full border-2 border-[var(--border)] flex items-center justify-center bg-white hover:scale-110 transition-all shadow-sm">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M12 4v16m8-8H4"></path></svg>
-          </button>
+          
+          {/* Add Friend Search */}
+          <div className="relative mb-6">
+            <input 
+              type="text" 
+              placeholder="Find peer @handle..." 
+              className="w-full retro-input !py-3 text-xs pr-12"
+              value={searchHandle}
+              onChange={e => setSearchHandle(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSearchFriend()}
+            />
+            <button 
+              onClick={handleSearchFriend}
+              disabled={searchStatus === 'searching'}
+              className="absolute right-2 top-1.5 w-8 h-8 rounded-xl bg-[var(--primary)] text-white flex items-center justify-center border border-[var(--border)] shadow-sm hover:scale-105 active:scale-95 disabled:opacity-50"
+            >
+              {searchStatus === 'searching' ? '...' : searchStatus === 'found' ? '✓' : searchStatus === 'error' ? '!' : '+'}
+            </button>
+          </div>
         </div>
 
         {/* Presence Section */}
         <div className="px-6 mb-4">
-           <h4 className="text-[9px] font-bold uppercase tracking-widest opacity-40 mb-3">Pulse Status</h4>
+           <h4 className="text-[9px] font-bold uppercase tracking-widest opacity-40 mb-3">Live Mesh Status</h4>
            <div className="flex -space-x-3 overflow-hidden h-10 items-center">
               {Object.entries(activeUsers).map(([id, data]) => (
                 <div key={id} className="relative group" title={(data as any).name}>
@@ -196,7 +258,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentUser }) => {
               </div>
               <div className="flex-1 text-left truncate">
                 <p className="font-heading text-sm uppercase truncate">{chat.isGroup ? chat.groupName : chat.participants[0].name}</p>
-                <p className="text-[10px] truncate opacity-60 italic">{chat.lastMessage}</p>
+                <div className="flex items-center gap-1.5">
+                   {!chat.isGroup && (
+                     <div className={`w-1.5 h-1.5 rounded-full ${activeUsers[chat.participants[0].id] ? 'bg-green-500' : 'bg-gray-400 opacity-30'}`}></div>
+                   )}
+                   <p className="text-[10px] truncate opacity-60 italic">{chat.lastMessage}</p>
+                </div>
               </div>
             </button>
           ))}
@@ -274,7 +341,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentUser }) => {
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center p-12 text-center opacity-20 select-none">
             <h3 className="font-display text-3xl uppercase italic tracking-tighter">Enter the Stream</h3>
-            <p className="text-[10px] font-bold uppercase tracking-[0.5em] mt-6">Secure Local Studio</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.5em] mt-6">Decentralized P2P Channel</p>
           </div>
         )}
       </div>
