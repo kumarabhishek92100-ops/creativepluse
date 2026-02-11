@@ -5,7 +5,11 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   define: {
-    // Bridges Vercel's environment variables to the client code
-    'process.env.API_KEY': JSON.stringify(process.env.API_KEY)
+    // Ensures process.env.API_KEY is replaced during build time for browser compatibility
+    'process.env.API_KEY': JSON.stringify(process.env.API_KEY || '')
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: false
   }
 });
