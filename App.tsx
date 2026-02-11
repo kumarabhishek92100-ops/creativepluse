@@ -37,11 +37,14 @@ const App: React.FC = () => {
     document.documentElement.setAttribute('data-theme', theme);
     setIsReady(true);
 
-    // Universal Sync Listener
-    const handleStorageChange = () => {
-      setNetworkStatus('syncing');
-      refreshData();
-      setTimeout(() => setNetworkStatus('online'), 800);
+    // Universal Sync Listener for Multi-Tab support on Vercel
+    const handleStorageChange = (e: StorageEvent) => {
+      // Only refresh if the change was to our registry or session
+      if (e.key === 'cp_universal_v1_registry' || e.key === 'cp_universal_v1_session') {
+        setNetworkStatus('syncing');
+        refreshData();
+        setTimeout(() => setNetworkStatus('online'), 800);
+      }
     };
     window.addEventListener('storage', handleStorageChange);
 
