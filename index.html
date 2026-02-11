@@ -1,0 +1,189 @@
+
+<!DOCTYPE html>
+<html lang="en" data-theme="sanctuary">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>CreativePulse | Global Artist Network</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Space+Grotesk:wght@400;500;700&family=Syne:wght@700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* Sanctuary (Soft) */
+      --primary: #a7c0a1;
+      --secondary: #e6b8af;
+      --accent: #b2c9df;
+      --bg-base: #fdfaf7;
+      --border: #444444;
+      --card-bg: #ffffff;
+      --text-main: #444444;
+      --text-muted: #888888;
+      --nav-bg: rgba(255, 255, 255, 0.8);
+      --input-bg: #f3f3f3;
+      --self-msg: #444444;
+      --other-msg: #f0f0f0;
+      --self-text: #ffffff;
+      --icon-color: #444444;
+    }
+
+    [data-theme="midnight"] {
+      --primary: #5a7d60;
+      --secondary: #8b5e5e;
+      --accent: #4a5a7d;
+      --bg-base: #0f1113;
+      --border: #3a3f44;
+      --card-bg: #1c1f23;
+      --text-main: #e0e6ed;
+      --text-muted: #94a3b8;
+      --nav-bg: rgba(28, 31, 35, 0.9);
+      --input-bg: #2d3339;
+      --self-msg: #5a7d60;
+      --other-msg: #2d3339;
+      --self-text: #ffffff;
+      --icon-color: #e0e6ed;
+    }
+
+    [data-theme="cyber"] {
+      --primary: #00ff41;
+      --secondary: #ff00ff;
+      --accent: #00ffff;
+      --bg-base: #000000;
+      --border: #00ff41;
+      --card-bg: #0a0a0a;
+      --text-main: #00ff41;
+      --text-muted: #008f11;
+      --nav-bg: rgba(0, 0, 0, 0.95);
+      --input-bg: rgba(0, 255, 65, 0.1);
+      --self-msg: #00ff41;
+      --other-msg: #001a00;
+      --self-text: #000000;
+      --icon-color: #00ff41;
+    }
+
+    [data-theme="paper"] {
+      --primary: #2c2c2c;
+      --secondary: #a0522d;
+      --accent: #4682b4;
+      --bg-base: #f4ecd8;
+      --border: #3d3d3d;
+      --card-bg: #fffdf5;
+      --text-main: #2c2c2c;
+      --text-muted: #6b6b6b;
+      --nav-bg: #ede6d0;
+      --input-bg: #e2dac2;
+      --self-msg: #2c2c2c;
+      --other-msg: #ffffff;
+      --self-text: #ffffff;
+      --icon-color: #2c2c2c;
+    }
+
+    body {
+      font-family: 'Space Grotesk', sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      transition: background-color 0.3s ease, color 0.3s ease;
+      overflow-x: hidden;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .font-display { font-family: 'Bungee', cursive; }
+    .font-heading { font-family: 'Syne', sans-serif; font-weight: 800; }
+    
+    .chunky-card {
+      background: var(--card-bg);
+      border: 2px solid var(--border);
+      box-shadow: 4px 4px 0px 0px var(--border);
+      color: var(--text-main);
+      transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .chunky-button {
+      background: var(--primary);
+      border: 2px solid var(--border);
+      box-shadow: 3px 3px 0px 0px var(--border);
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: var(--self-text);
+      transition: all 0.2s;
+    }
+
+    .chunky-button:active {
+      transform: translate(2px, 2px);
+      box-shadow: 0px 0px 0px 0px var(--border);
+    }
+
+    .retro-input {
+      background: var(--input-bg);
+      border: 2px solid var(--border);
+      color: var(--text-main);
+      padding: 12px 16px;
+      border-radius: 12px;
+      outline: none;
+      transition: background-color 0.3s ease;
+    }
+
+    .retro-input::placeholder {
+      color: var(--text-muted);
+      opacity: 0.6;
+    }
+
+    .sticker {
+      background: var(--accent);
+      color: var(--border);
+      border: 1.5px solid var(--border);
+      padding: 2px 8px;
+      font-size: 0.6rem;
+      font-weight: 900;
+      box-shadow: 2px 2px 0px var(--border);
+      text-transform: uppercase;
+    }
+
+    .msg-self {
+      background-color: var(--self-msg);
+      color: var(--self-text);
+      border-radius: 20px 20px 4px 20px;
+      box-shadow: 2px 2px 0px var(--border);
+    }
+    .msg-other {
+      background-color: var(--other-msg);
+      color: var(--text-main);
+      border: 1.5px solid var(--border);
+      border-radius: 20px 20px 20px 4px;
+      box-shadow: 2px 2px 0px var(--border);
+    }
+
+    .nav-icon {
+      color: var(--icon-color);
+      transition: color 0.3s ease;
+    }
+
+    .pb-safe { padding-bottom: calc(6rem + env(safe-area-inset-bottom)); }
+    
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 10px; border: 1px solid var(--border); }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in { animation: fadeIn 0.4s ease forwards; }
+  </style>
+<script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react": "https://esm.sh/react@^19.2.4",
+    "@google/genai": "https://esm.sh/@google/genai@^1.40.0"
+  }
+}
+</script>
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>

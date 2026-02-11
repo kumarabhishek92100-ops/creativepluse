@@ -1,0 +1,9 @@
+{
+  "name": "CreativePulse",
+  "description": "A high-end social platform for artists and creators featuring Instagram-style feeds, multi-track recording rooms, and AI-powered creative collaboration.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
