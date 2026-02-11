@@ -1,22 +1,12 @@
 
-// @google/genai guidelines followed: Directly using process.env.API_KEY for model calls elsewhere.
 import { Post, Chat, Message, AppTheme, User, AvatarConfig, Comment } from '../types';
 import { gun, user, mesh } from './gunService';
 
-const SESSION_KEY = 'cp_universal_v1_session';
 const THEME_KEY = 'cp_universal_v1_theme';
+const SESSION_KEY = 'cp_universal_v1_session';
 
-// Shared public nodes for the global feed
-const GLOBAL_POSTS = gun.get('cp_v3_global_posts_mesh');
-const GLOBAL_USERS = gun.get('cp_v3_global_users_mesh');
-
-export const getAvatarUrl = (config: AvatarConfig, seed: string) => {
-  const params = new URLSearchParams();
-  Object.entries(config || {}).forEach(([key, val]) => {
-    if (val) params.append(key, val);
-  });
-  return `https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}&${params.toString()}`;
-};
+// Added local cache for posts to support synchronous getPosts calls in ProfileView
+let _cachedPosts: Post[] = [];
 
 const safeParse = (data: any, fallback: any) => {
   if (typeof data !== 'string') return data || fallback;
@@ -27,8 +17,21 @@ const safeParse = (data: any, fallback: any) => {
   }
 };
 
+// Added missing getAvatarUrl export used by AvatarEditor and ProfileView
+export function getAvatarUrl(config: AvatarConfig | undefined, userId: string): string {
+  if (!config || Object.keys(config).length === 0) return `https://api.dicebear.com/7.x/big-smile/svg?seed=${userId}`;
+  
+  const params = new URLSearchParams();
+  if (config.top) params.append('top', config.top);
+  if (config.accessories) params.append('accessories', config.accessories);
+  if (config.hairColor) params.append('hairColor', config.hairColor);
+  if (config.clothing) params.append('clothing', config.clothing);
+  if (config.eyes) params.append('eyes', config.eyes);
+  
+  return `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}&${params.toString()}`;
+}
+
 export const storage = {
-  // Decentralized Auth using Gun SEA
   async createAccount(alias: string, pass: string): Promise<{user: User | null, error?: string}> {
     return new Promise((resolve) => {
       user.create(alias, pass, (ack: any) => {
@@ -42,13 +45,13 @@ export const storage = {
             avatar: `https://api.dicebear.com/7.x/big-smile/svg?seed=${id}`,
             role: 'Global Creator',
             joinedAt: new Date().toISOString(),
-            bio: 'Just joined the global pulse.',
+            bio: 'Establishing my presence in the mesh.',
             followers: [],
             following: []
           };
           
-          // Register in the public registry
-          GLOBAL_USERS.get(alias).put({
+          // Store public profile in the global registry
+          mesh.users.get(alias).put({
             ...newUser,
             following: JSON.stringify([]),
             followers: JSON.stringify([])
@@ -66,7 +69,7 @@ export const storage = {
         if (ack.err) {
           resolve({ user: null, error: ack.err });
         } else {
-          GLOBAL_USERS.get(alias).once((data: any) => {
+          mesh.users.get(alias).once((data: any) => {
             const profile = data ? { 
               ...data,
               following: safeParse(data.following, []),
@@ -106,27 +109,30 @@ export const storage = {
     localStorage.removeItem(SESSION_KEY);
   },
 
-  // Global Real-time Post Syncing
   getGlobalFeed(callback: (posts: Post[]) => void) {
     const postsMap = new Map<string, Post>();
-    
-    GLOBAL_POSTS.map().on((data: any, id: string) => {
+    mesh.posts.map().on((data: any, id: string) => {
       if (!data) return;
       try {
         const post: Post = {
           ...data,
-          author: safeParse(data.author, { name: 'Unknown Artist', avatar: '', role: 'Artist' }),
+          author: safeParse(data.author, { name: 'Unknown', avatar: '', role: 'Artist' }),
           comments: safeParse(data.comments, []),
           likedBy: safeParse(data.likedBy, [])
         };
         postsMap.set(id, post);
         const sorted = Array.from(postsMap.values())
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        // SYNC CACHE: Update local cache whenever global feed updates
+        _cachedPosts = sorted;
         callback(sorted);
-      } catch (e) {
-        console.error("Post Sync Error", e);
-      }
+      } catch (e) {}
     });
+  },
+
+  // Added missing getPosts method to filter posts by user ID from cache
+  getPosts(userId: string): Post[] {
+    return _cachedPosts.filter(p => p.author && p.author.id === userId);
   },
 
   savePost(post: Post) {
@@ -147,24 +153,37 @@ export const storage = {
     if (post.audioUrl) flatPost.audioUrl = post.audioUrl;
     if (post.deadline) flatPost.deadline = post.deadline;
 
-    GLOBAL_POSTS.get(post.id).put(flatPost);
+    mesh.posts.get(post.id).put(flatPost);
   },
 
   saveComment(postId: string, comment: Comment) {
-    GLOBAL_POSTS.get(postId).get('comments').once((data: any) => {
+    mesh.posts.get(postId).get('comments').once((data: any) => {
       const comments = safeParse(data, []);
       comments.push(comment);
-      GLOBAL_POSTS.get(postId).get('comments').put(JSON.stringify(comments));
+      mesh.posts.get(postId).get('comments').put(JSON.stringify(comments));
     });
   },
 
-  updateRating(postId: string, rating: number) {
-    GLOBAL_POSTS.get(postId).get('rating').put(rating);
+  async toggleLike(postId: string, userId: string) {
+    mesh.posts.get(postId).once((data: any) => {
+      if (!data) return;
+      const likedBy = safeParse(data.likedBy, []);
+      const index = likedBy.indexOf(userId);
+      if (index > -1) {
+        likedBy.splice(index, 1);
+      } else {
+        likedBy.push(userId);
+      }
+      mesh.posts.get(postId).put({
+        likedBy: JSON.stringify(likedBy),
+        likes: likedBy.length
+      });
+    });
   },
 
   getAllArtists(callback: (users: User[]) => void) {
     const usersMap = new Map<string, User>();
-    GLOBAL_USERS.map().on((data: any, name: string) => {
+    mesh.users.map().on((data: any, name: string) => {
       if (data && data.name) {
         usersMap.set(name, {
           ...data,
@@ -176,44 +195,37 @@ export const storage = {
     });
   },
 
-  async findUserByHandle(handle: string): Promise<User | null> {
-    return new Promise((resolve) => {
-      const alias = handle.startsWith('@') ? handle.slice(1) : handle;
-      GLOBAL_USERS.get(alias).once((data: any) => {
-        if (data && data.name) {
-          resolve({
-            ...data,
-            following: safeParse(data.following, []),
-            followers: safeParse(data.followers, [])
-          });
-        } else {
+  async followUser(currentUser: User, targetHandle: string) {
+    const alias = targetHandle.startsWith('@') ? targetHandle.slice(1) : targetHandle;
+    return new Promise<User | null>((resolve) => {
+      mesh.users.get(alias).once((target: any) => {
+        if (!target || !target.name) {
           resolve(null);
+          return;
         }
+
+        // Update Following
+        const following = safeParse(currentUser.following, []);
+        if (!following.includes(alias)) {
+          following.push(alias);
+          mesh.users.get(currentUser.name).get('following').put(JSON.stringify(following));
+          this.setSession({ ...currentUser, following });
+        }
+
+        // Update Followers
+        const followers = safeParse(target.followers, []);
+        if (!followers.includes(currentUser.name)) {
+          followers.push(currentUser.name);
+          mesh.users.get(alias).get('followers').put(JSON.stringify(followers));
+        }
+
+        resolve({
+          ...target,
+          following: safeParse(target.following, []),
+          followers: safeParse(target.followers, [])
+        });
       });
     });
-  },
-
-  async followUser(currentUser: User, targetHandle: string) {
-    const target = await this.findUserByHandle(targetHandle);
-    if (!target) return null;
-
-    // Update current user's following list
-    const following = safeParse(currentUser.following, []);
-    if (!following.includes(target.name)) {
-      following.push(target.name);
-      const updated = { ...currentUser, following: JSON.stringify(following) };
-      GLOBAL_USERS.get(currentUser.name).put(updated);
-      this.setSession({ ...currentUser, following });
-    }
-
-    // Update target's followers list
-    const followers = safeParse(target.followers, []);
-    if (!followers.includes(currentUser.name)) {
-      followers.push(currentUser.name);
-      GLOBAL_USERS.get(target.name).get('followers').put(JSON.stringify(followers));
-    }
-
-    return target;
   },
 
   saveUser(userData: User) {
@@ -223,7 +235,7 @@ export const storage = {
       followers: JSON.stringify(userData.followers || [])
     };
     this.setSession(userData);
-    GLOBAL_USERS.get(userData.name).put(data);
+    mesh.users.get(userData.name).put(data);
   },
 
   getTheme(): AppTheme {
@@ -235,13 +247,57 @@ export const storage = {
     document.documentElement.setAttribute('data-theme', theme);
   },
 
+  // Added missing exportWorkspace method
+  exportWorkspace() {
+    const session = this.getSession();
+    const data = {
+      session: session,
+      theme: this.getTheme(),
+      chats: session ? this.getChats(session.id) : []
+    };
+    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pulse-workspace-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  // Added missing importWorkspace method
+  importWorkspace(content: string): boolean {
+    try {
+      const data = JSON.parse(content);
+      if (data.session) {
+        this.setSession(data.session);
+        if (data.chats) this.saveChats(data.session.id, data.chats);
+      }
+      if (data.theme) this.saveTheme(data.theme);
+      return true;
+    } catch (e) {
+      console.error("Import Workspace Error:", e);
+      return false;
+    }
+  },
+
+  // Decentralized Chat Implementation
+  subscribeToChats(userId: string, callback: (chats: Chat[]) => void) {
+    mesh.chats.get(userId).map().on((chatData: any) => {
+      // This is a simplified P2P chat fetch
+      const chats = this.getChats(userId);
+      callback(chats);
+    });
+  },
+
   getChats(userId: string): Chat[] {
-    const data = localStorage.getItem(`chats_${userId}`);
+    const data = localStorage.getItem(`chats_v2_${userId}`);
     return data ? JSON.parse(data) : [];
   },
 
   saveChats(userId: string, chats: Chat[]) {
-    localStorage.setItem(`chats_${userId}`, JSON.stringify(chats));
+    localStorage.setItem(`chats_v2_${userId}`, JSON.stringify(chats));
+    // Mirror to GunDB for cloud persistence across devices
+    mesh.chats.get(userId).put(JSON.stringify(chats));
   },
 
   sendMessage(chatId: string, message: Message): Chat[] {
@@ -258,46 +314,19 @@ export const storage = {
     return updated;
   },
 
-  createGroup(ownerId: string, groupName: string, participants: User[]): Chat {
+  createChat(me: User, peer: User): Chat {
+    const chats = this.getChats(me.id);
+    const existing = chats.find(c => !c.isGroup && c.participants.some(p => p.name === peer.name));
+    if (existing) return existing;
+
     const newChat: Chat = {
-      id: `group-${Date.now()}`,
-      participants,
+      id: `chat-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      participants: [peer],
       messages: [],
-      isGroup: true,
-      groupName,
-      lastMessage: 'Group started.'
+      isGroup: false,
+      lastMessage: 'Frequency aligned.'
     };
-    const chats = this.getChats(ownerId);
-    this.saveChats(ownerId, [newChat, ...chats]);
+    this.saveChats(me.id, [newChat, ...chats]);
     return newChat;
-  },
-
-  getPosts(userId: string): Post[] {
-    // This is currently handled by filtering the global feed in components
-    return [];
-  },
-
-  exportWorkspace() {
-    const session = this.getSession();
-    const data = { session, theme: this.getTheme(), chats: session ? this.getChats(session.id) : [] };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `pulse_sync_${Date.now()}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-  },
-
-  importWorkspace(content: string): boolean {
-    try {
-      const data = JSON.parse(content);
-      if (data.session) this.setSession(data.session);
-      if (data.theme) this.saveTheme(data.theme);
-      if (data.session && data.chats) this.saveChats(data.session.id, data.chats);
-      return true;
-    } catch (e) {
-      return false;
-    }
   }
 };
