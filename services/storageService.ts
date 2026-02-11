@@ -7,8 +7,8 @@ const SESSION_KEY = 'cp_universal_v1_session';
 const THEME_KEY = 'cp_universal_v1_theme';
 
 // Shared public nodes for the global feed
-const GLOBAL_POSTS = gun.get('cp_v2_global_gallery_mesh');
-const GLOBAL_USERS = gun.get('cp_v2_global_user_mesh');
+const GLOBAL_POSTS = gun.get('cp_v3_global_posts_mesh');
+const GLOBAL_USERS = gun.get('cp_v3_global_users_mesh');
 
 export const getAvatarUrl = (config: AvatarConfig, seed: string) => {
   const params = new URLSearchParams();
@@ -23,7 +23,6 @@ const safeParse = (data: any, fallback: any) => {
   try {
     return JSON.parse(data);
   } catch (e) {
-    console.error("Parse Error:", e);
     return fallback;
   }
 };
@@ -36,7 +35,6 @@ export const storage = {
         if (ack.err) {
           resolve({ user: null, error: ack.err });
         } else {
-          // Profile construction
           const id = `u-${Math.random().toString(36).substr(2, 9)}`;
           const newUser: User = {
             id,
@@ -49,10 +47,13 @@ export const storage = {
             following: []
           };
           
-          // Register in the public artist registry
-          GLOBAL_USERS.get(alias).put(newUser);
+          // Register in the public registry
+          GLOBAL_USERS.get(alias).put({
+            ...newUser,
+            following: JSON.stringify([]),
+            followers: JSON.stringify([])
+          });
           
-          // Log in immediately
           this.login(alias, pass).then(res => resolve(res));
         }
       });
@@ -65,9 +66,12 @@ export const storage = {
         if (ack.err) {
           resolve({ user: null, error: ack.err });
         } else {
-          // Fetch profile from registry
           GLOBAL_USERS.get(alias).once((data: any) => {
-            const profile = data ? { ...data } : {
+            const profile = data ? { 
+              ...data,
+              following: safeParse(data.following, []),
+              followers: safeParse(data.followers, [])
+            } : {
               id: `u-${alias}`,
               name: alias,
               avatar: `https://api.dicebear.com/7.x/big-smile/svg?seed=${alias}`,
@@ -106,10 +110,8 @@ export const storage = {
   getGlobalFeed(callback: (posts: Post[]) => void) {
     const postsMap = new Map<string, Post>();
     
-    // Listen to the global posts node
     GLOBAL_POSTS.map().on((data: any, id: string) => {
       if (!data) return;
-      
       try {
         const post: Post = {
           ...data,
@@ -117,17 +119,12 @@ export const storage = {
           comments: safeParse(data.comments, []),
           likedBy: safeParse(data.likedBy, [])
         };
-        
-        // Final fallback for missing required fields
-        if (!post.author.name) post.author.name = "Anonymous";
-        
         postsMap.set(id, post);
         const sorted = Array.from(postsMap.values())
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        
         callback(sorted);
       } catch (e) {
-        console.error("Failed to process global post update", e);
+        console.error("Post Sync Error", e);
       }
     });
   },
@@ -145,7 +142,6 @@ export const storage = {
       comments: JSON.stringify(post.comments || []),
       likedBy: JSON.stringify(post.likedBy || [])
     };
-
     if (post.imageUrl) flatPost.imageUrl = post.imageUrl;
     if (post.videoUrl) flatPost.videoUrl = post.videoUrl;
     if (post.audioUrl) flatPost.audioUrl = post.audioUrl;
@@ -155,9 +151,8 @@ export const storage = {
   },
 
   saveComment(postId: string, comment: Comment) {
-    GLOBAL_POSTS.get(postId).once((data: any) => {
-      if (!data) return;
-      const comments = safeParse(data.comments, []);
+    GLOBAL_POSTS.get(postId).get('comments').once((data: any) => {
+      const comments = safeParse(data, []);
       comments.push(comment);
       GLOBAL_POSTS.get(postId).get('comments').put(JSON.stringify(comments));
     });
@@ -169,16 +164,21 @@ export const storage = {
 
   getAllArtists(callback: (users: User[]) => void) {
     const usersMap = new Map<string, User>();
-    GLOBAL_USERS.map().on((data: any, id: string) => {
+    GLOBAL_USERS.map().on((data: any, name: string) => {
       if (data && data.name) {
-        usersMap.set(data.name, data);
+        usersMap.set(name, {
+          ...data,
+          following: safeParse(data.following, []),
+          followers: safeParse(data.followers, [])
+        });
         callback(Array.from(usersMap.values()));
       }
     });
   },
 
-  async findUserByAlias(alias: string): Promise<User | null> {
+  async findUserByHandle(handle: string): Promise<User | null> {
     return new Promise((resolve) => {
+      const alias = handle.startsWith('@') ? handle.slice(1) : handle;
       GLOBAL_USERS.get(alias).once((data: any) => {
         if (data && data.name) {
           resolve({
@@ -193,36 +193,37 @@ export const storage = {
     });
   },
 
-  async followUser(currentUser: User, targetAlias: string) {
-    const targetUser = await this.findUserByAlias(targetAlias);
-    if (!targetUser) return null;
+  async followUser(currentUser: User, targetHandle: string) {
+    const target = await this.findUserByHandle(targetHandle);
+    if (!target) return null;
 
-    const currentFollowing = safeParse(currentUser.following, []);
-    if (!currentFollowing.includes(targetAlias)) {
-      currentFollowing.push(targetAlias);
-      const updatedUser = { ...currentUser, following: JSON.stringify(currentFollowing) };
-      GLOBAL_USERS.get(currentUser.name).put(updatedUser);
-      this.setSession({ ...currentUser, following: currentFollowing });
+    // Update current user's following list
+    const following = safeParse(currentUser.following, []);
+    if (!following.includes(target.name)) {
+      following.push(target.name);
+      const updated = { ...currentUser, following: JSON.stringify(following) };
+      GLOBAL_USERS.get(currentUser.name).put(updated);
+      this.setSession({ ...currentUser, following });
     }
 
-    // Also update target's followers list
-    const targetFollowers = safeParse(targetUser.followers, []);
-    if (!targetFollowers.includes(currentUser.name)) {
-      targetFollowers.push(currentUser.name);
-      GLOBAL_USERS.get(targetAlias).get('followers').put(JSON.stringify(targetFollowers));
+    // Update target's followers list
+    const followers = safeParse(target.followers, []);
+    if (!followers.includes(currentUser.name)) {
+      followers.push(currentUser.name);
+      GLOBAL_USERS.get(target.name).get('followers').put(JSON.stringify(followers));
     }
 
-    return targetUser;
+    return target;
   },
 
   saveUser(userData: User) {
-    const dataToStore = {
+    const data = {
       ...userData,
       following: JSON.stringify(userData.following || []),
       followers: JSON.stringify(userData.followers || [])
     };
     this.setSession(userData);
-    GLOBAL_USERS.get(userData.name).put(dataToStore);
+    GLOBAL_USERS.get(userData.name).put(data);
   },
 
   getTheme(): AppTheme {
@@ -244,16 +245,16 @@ export const storage = {
   },
 
   sendMessage(chatId: string, message: Message): Chat[] {
-    const user = this.getSession();
-    if (!user) return [];
-    const chats = this.getChats(user.id);
+    const me = this.getSession();
+    if (!me) return [];
+    const chats = this.getChats(me.id);
     const updated = chats.map(c => {
       if (c.id === chatId) {
         return { ...c, messages: [...c.messages, message], lastMessage: message.text };
       }
       return c;
     });
-    this.saveChats(user.id, updated);
+    this.saveChats(me.id, updated);
     return updated;
   },
 
@@ -271,31 +272,19 @@ export const storage = {
     return newChat;
   },
 
-  addParticipantToGroup(userId: string, chatId: string, participant: User): Chat[] | null {
-    const chats = this.getChats(userId);
-    const idx = chats.findIndex(c => c.id === chatId);
-    if (idx === -1) return null;
-    chats[idx].participants.push(participant);
-    this.saveChats(userId, chats);
-    return chats;
-  },
-
   getPosts(userId: string): Post[] {
+    // This is currently handled by filtering the global feed in components
     return [];
   },
 
   exportWorkspace() {
-    const userSession = this.getSession();
-    const data = {
-      session: userSession,
-      theme: this.getTheme(),
-      chats: userSession ? this.getChats(userSession.id) : []
-    };
+    const session = this.getSession();
+    const data = { session, theme: this.getTheme(), chats: session ? this.getChats(session.id) : [] };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `pulse_backup_${Date.now()}.json`;
+    link.download = `pulse_sync_${Date.now()}.json`;
     link.click();
     URL.revokeObjectURL(url);
   },
@@ -308,7 +297,6 @@ export const storage = {
       if (data.session && data.chats) this.saveChats(data.session.id, data.chats);
       return true;
     } catch (e) {
-      console.error("Import Error:", e);
       return false;
     }
   }
